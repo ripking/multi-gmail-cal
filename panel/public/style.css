@@ -1,0 +1,266 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0a0a0a;
+  color: #e5e5e5;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+header {
+  margin-bottom: 2rem;
+}
+
+h1 {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #fafafa;
+}
+
+.subtitle {
+  color: #737373;
+  margin-top: 0.25rem;
+}
+
+h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: #fafafa;
+}
+
+.card {
+  background: #171717;
+  border: 1px solid #262626;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #a3a3a3;
+  margin-bottom: 0.35rem;
+}
+
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #e5e5e5;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input:focus {
+  border-color: #525252;
+}
+
+.btn {
+  padding: 0.55rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-primary {
+  background: #3b82f6;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
+}
+
+.btn-secondary {
+  background: #262626;
+  color: #e5e5e5;
+}
+
+.btn-secondary:hover {
+  background: #333;
+}
+
+.btn-small {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.7rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.status-ok {
+  background: #052e16;
+  color: #22c55e;
+  border: 1px solid #166534;
+}
+
+.status-missing {
+  background: #1c0a00;
+  color: #f97316;
+  border: 1px solid #7c2d12;
+}
+
+.status-expired {
+  background: #1a0000;
+  color: #ef4444;
+  border: 1px solid #7f1d1d;
+}
+
+/* Accounts table */
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #262626;
+}
+
+.account-row:last-child {
+  border-bottom: none;
+}
+
+.account-info {
+  flex: 1;
+}
+
+.account-name {
+  font-weight: 600;
+  color: #fafafa;
+}
+
+.account-email {
+  font-size: 0.85rem;
+  color: #737373;
+}
+
+.account-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.add-account-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #262626;
+}
+
+.add-account-row input {
+  flex: 1;
+}
+
+.empty-state {
+  color: #525252;
+  font-style: italic;
+  text-align: center;
+  padding: 1.5rem 0;
+}
+
+/* Collapsible */
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.chevron {
+  font-size: 0.7rem;
+  transition: transform 0.2s;
+}
+
+.chevron.open {
+  transform: rotate(180deg);
+}
+
+.collapsible-content {
+  margin-top: 1rem;
+}
+
+.collapsible-content ol {
+  padding-left: 1.5rem;
+}
+
+.collapsible-content li {
+  margin-bottom: 0.5rem;
+  color: #a3a3a3;
+}
+
+.collapsible-content a {
+  color: #3b82f6;
+  text-decoration: none;
+}
+
+.collapsible-content a:hover {
+  text-decoration: underline;
+}
+
+/* Toast notification */
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 100;
+}
+
+.toast.show {
+  opacity: 1;
+}
+
+.toast-success {
+  background: #052e16;
+  color: #22c55e;
+  border: 1px solid #166534;
+}
+
+.toast-error {
+  background: #1a0000;
+  color: #ef4444;
+  border: 1px solid #7f1d1d;
+}

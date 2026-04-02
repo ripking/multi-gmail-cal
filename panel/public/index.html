@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Gmail Manager</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Multi-Gmail Manager</h1>
+      <p class="subtitle">Manage your connected Gmail accounts for Claude</p>
+    </header>
+
+    <!-- OAuth Configuration -->
+    <section id="oauth-section" class="card">
+      <h2>OAuth Configuration</h2>
+      <div id="oauth-status" class="status-badge"></div>
+      <div class="form-group">
+        <label for="client-id">Client ID</label>
+        <input type="text" id="client-id" placeholder="Your Google OAuth Client ID">
+      </div>
+      <div class="form-group">
+        <label for="client-secret">Client Secret</label>
+        <input type="password" id="client-secret" placeholder="Your Google OAuth Client Secret">
+      </div>
+      <button id="save-oauth" class="btn btn-primary">Save OAuth Config</button>
+    </section>
+
+    <!-- Accounts -->
+    <section id="accounts-section" class="card">
+      <h2>Connected Accounts</h2>
+      <div id="accounts-list">
+        <p class="empty-state">Loading...</p>
+      </div>
+      <div class="add-account-row">
+        <input type="text" id="new-account-name" placeholder="Account name (e.g., Work, Personal)">
+        <button id="add-account" class="btn btn-primary">Add Account</button>
+      </div>
+    </section>
+
+    <!-- Setup Instructions -->
+    <section class="card collapsible">
+      <h2 class="collapsible-header" onclick="toggleSection(this)">
+        Setup Instructions
+        <span class="chevron">&#9660;</span>
+      </h2>
+      <div class="collapsible-content" style="display: none;">
+        <ol>
+          <li>Go to <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a> and create a project (or use existing)</li>
+          <li>Enable the <strong>Gmail API</strong> under APIs &amp; Services &rarr; Library</li>
+          <li>Configure the <strong>OAuth consent screen</strong> (External is fine for personal use, add yourself as a test user)</li>
+          <li>Create an <strong>OAuth 2.0 Client ID</strong> (type: Desktop app)</li>
+          <li>Copy the Client ID and Client Secret into the form above</li>
+          <li>Click <strong>Add Account</strong> below and sign in with each Gmail account</li>
+        </ol>
+      </div>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

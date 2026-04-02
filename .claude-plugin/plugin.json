@@ -1,0 +1,9 @@
+{
+  "name": "multi-gmail",
+  "description": "Manage multiple Gmail accounts with custom names — search, draft, send, and read across all your connected inboxes",
+  "version": "0.1.0",
+  "author": {
+    "name": "Ethan Lieberman"
+  },
+  "keywords": ["gmail", "email", "multi-account"]
+}
