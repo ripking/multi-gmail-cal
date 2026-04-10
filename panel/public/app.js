@@ -87,22 +87,34 @@ function renderAccounts(accounts) {
     return
   }
 
-  list.innerHTML = accounts.map(a => `
+  list.innerHTML = accounts.map(a => {
+    let statusClass, statusText
+    if (!a.hasRefreshToken) {
+      statusClass = 'status-expired'
+      statusText = 'Needs Re-auth'
+    } else if (a.accessTokenExpired) {
+      statusClass = 'status-ok'
+      statusText = 'Active (will auto-refresh)'
+    } else {
+      statusClass = 'status-ok'
+      statusText = 'Active'
+    }
+    return `
     <div class="account-row">
       <div class="account-info">
         <div class="account-name">${esc(a.name)}</div>
         <div class="account-email">${esc(a.email)}</div>
       </div>
-      <span class="status-badge ${a.tokenValid ? 'status-ok' : 'status-expired'}">
-        ${a.tokenValid ? 'Valid' : 'Expired'}
+      <span class="status-badge ${statusClass}">
+        ${statusText}
       </span>
       <div class="account-actions">
         <button class="btn btn-secondary btn-small" onclick="testAccount('${esc(a.name)}')">Test</button>
         <button class="btn btn-secondary btn-small" onclick="renameAccount('${esc(a.name)}')">Rename</button>
         <button class="btn btn-danger btn-small" onclick="removeAccount('${esc(a.name)}')">Remove</button>
       </div>
-    </div>
-  `).join('')
+    </div>`
+  }).join('')
 }
 
 async function addAccount() {

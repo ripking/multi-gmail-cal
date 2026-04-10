@@ -36,24 +36,53 @@ export async function getAuthenticatedClient(
 
   // Listen for token refresh events and persist new tokens
   client.on('tokens', (tokens) => {
-    const freshConfig = readConfig()
-    const acc = freshConfig.accounts.find(a => a.email === account.email)
-    if (acc) {
-      if (tokens.access_token) acc.tokens.access_token = tokens.access_token
-      if (tokens.expiry_date) acc.tokens.expiry_date = tokens.expiry_date
-      if (tokens.refresh_token) acc.tokens.refresh_token = tokens.refresh_token
-      writeConfig(freshConfig)
-    }
+    persistRefreshedTokens(account.email, tokens)
   })
 
-  // Force refresh if expired
-  if (account.tokens.expiry_date <= Date.now()) {
-    await client.getAccessToken()
+  // Force refresh if expired or expiring within 5 minutes
+  const BUFFER_MS = 5 * 60 * 1000
+  if (account.tokens.expiry_date <= Date.now() + BUFFER_MS) {
+    await forceRefresh(client, account.email)
   }
 
   return client
 }
 
+/**
+ * Force-refresh the access token and explicitly persist the new credentials.
+ * This is more reliable than relying solely on the 'tokens' event listener.
+ */
+async function forceRefresh(client: OAuth2Client, email: string): Promise<void> {
+  const { token } = await client.getAccessToken()
+  // Explicitly persist — don't rely only on the event listener
+  const creds = client.credentials
+  if (creds.access_token) {
+    persistRefreshedTokens(email, {
+      access_token: creds.access_token,
+      expiry_date: creds.expiry_date ?? undefined,
+      refresh_token: creds.refresh_token ?? undefined,
+    })
+  }
+}
+
+function persistRefreshedTokens(
+  email: string,
+  tokens: { access_token?: string | null; expiry_date?: number | null; refresh_token?: string | null }
+): void {
+  const freshConfig = readConfig()
+  const acc = freshConfig.accounts.find(a => a.email === email)
+  if (acc) {
+    if (tokens.access_token) acc.tokens.access_token = tokens.access_token
+    if (tokens.expiry_date) acc.tokens.expiry_date = tokens.expiry_date
+    if (tokens.refresh_token) acc.tokens.refresh_token = tokens.refresh_token
+    writeConfig(freshConfig)
+  }
+}
+
 export function isTokenExpired(account: Account): boolean {
   return account.tokens.expiry_date <= Date.now()
+}
+
+export function hasRefreshToken(account: Account): boolean {
+  return !!account.tokens.refresh_token
 }

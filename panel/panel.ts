@@ -86,7 +86,9 @@ const server = Bun.serve({
       const accounts = config.accounts.map(a => ({
         name: a.name,
         email: a.email,
-        tokenValid: a.tokens.expiry_date > Date.now(),
+        tokenValid: !!a.tokens.refresh_token,
+        hasRefreshToken: !!a.tokens.refresh_token,
+        accessTokenExpired: a.tokens.expiry_date <= Date.now(),
         expiryDate: new Date(a.tokens.expiry_date).toISOString(),
       }))
       return jsonResponse({ accounts })

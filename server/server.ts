@@ -368,7 +368,28 @@ async function withAccount(
     const result = await fn(gmail, account, config)
     return json(result)
   } catch (err: any) {
-    if (err.code === 401 || err.message?.includes('invalid_grant')) {
+    // If we get a 401, try one more refresh before giving up
+    if (err.code === 401 && !err.message?.includes('invalid_grant')) {
+      try {
+        const freshConfig = readConfig()
+        const freshAccount = findAccount(freshConfig, args.account as string)
+        if (freshAccount) {
+          const retryClient = await getAuthenticatedClient(freshConfig, freshAccount)
+          const gmail = new GmailClient(retryClient)
+          const result = await fn(gmail, freshAccount, freshConfig)
+          return json(result)
+        }
+      } catch (retryErr: any) {
+        // Retry also failed — fall through to error handling below
+        if (retryErr.message?.includes('invalid_grant')) {
+          return text(`Refresh token expired for ${account.name} (${account.email}). Re-authenticate in the management panel at localhost:5000.`)
+        }
+      }
+    }
+    if (err.message?.includes('invalid_grant')) {
+      return text(`Refresh token expired for ${account.name} (${account.email}). Re-authenticate in the management panel at localhost:5000.`)
+    }
+    if (err.code === 401) {
       return text(`Authentication failed for ${account.name} (${account.email}). Re-authenticate in the management panel at localhost:5000.`)
     }
     if (err.code === 429) {

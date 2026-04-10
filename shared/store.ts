@@ -46,7 +46,9 @@ export function listAccountSummaries(config: MultiGmailConfig): AccountSummary[]
   return config.accounts.map(a => ({
     name: a.name,
     email: a.email,
-    tokenValid: a.tokens.expiry_date > Date.now(),
+    tokenValid: !!a.tokens.refresh_token,
+    accessTokenExpired: a.tokens.expiry_date <= Date.now(),
+    hasRefreshToken: !!a.tokens.refresh_token,
   }))
 }
 

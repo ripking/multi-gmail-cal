@@ -27,6 +27,8 @@ export interface AccountSummary {
   name: string
   email: string
   tokenValid: boolean
+  accessTokenExpired: boolean
+  hasRefreshToken: boolean
 }
 
 // --- Slack ---
