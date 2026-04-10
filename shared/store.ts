@@ -1,12 +1,24 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, copyFileSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import type { MultiGmailConfig, Account, AccountSummary } from './types.ts'
+import type { GoogleWorkspaceConfig, Account, AccountSummary } from './types.ts'
 
-export const CONFIG_DIR = join(homedir(), '.claude', 'channels', 'multi-gmail')
+export const CONFIG_DIR = join(homedir(), '.claude', 'channels', 'google-workspace')
 export const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 
-export function readConfig(): MultiGmailConfig {
+// Legacy path for auto-migration
+const LEGACY_CONFIG_DIR = join(homedir(), '.claude', 'channels', 'multi-gmail')
+const LEGACY_CONFIG_FILE = join(LEGACY_CONFIG_DIR, 'config.json')
+
+function migrateIfNeeded(): void {
+  if (!existsSync(CONFIG_FILE) && existsSync(LEGACY_CONFIG_FILE)) {
+    mkdirSync(CONFIG_DIR, { recursive: true })
+    copyFileSync(LEGACY_CONFIG_FILE, CONFIG_FILE)
+  }
+}
+
+export function readConfig(): GoogleWorkspaceConfig {
+  migrateIfNeeded()
   try {
     const raw = readFileSync(CONFIG_FILE, 'utf8')
     const parsed = JSON.parse(raw)
@@ -26,21 +38,21 @@ export function readConfig(): MultiGmailConfig {
   }
 }
 
-export function writeConfig(config: MultiGmailConfig): void {
+export function writeConfig(config: GoogleWorkspaceConfig): void {
   mkdirSync(CONFIG_DIR, { recursive: true })
   const tmp = CONFIG_FILE + '.tmp'
   writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 })
   renameSync(tmp, CONFIG_FILE)
 }
 
-export function findAccount(config: MultiGmailConfig, nameOrEmail: string): Account | undefined {
+export function findAccount(config: GoogleWorkspaceConfig, nameOrEmail: string): Account | undefined {
   const lower = nameOrEmail.toLowerCase()
   return config.accounts.find(
     a => a.name.toLowerCase() === lower || a.email.toLowerCase() === lower
   )
 }
 
-export function listAccountSummaries(config: MultiGmailConfig): AccountSummary[] {
+export function listAccountSummaries(config: GoogleWorkspaceConfig): AccountSummary[] {
   return config.accounts.map(a => ({
     name: a.name,
     email: a.email,
@@ -48,6 +60,6 @@ export function listAccountSummaries(config: MultiGmailConfig): AccountSummary[]
   }))
 }
 
-export function accountNames(config: MultiGmailConfig): string {
+export function accountNames(config: GoogleWorkspaceConfig): string {
   return config.accounts.map(a => `${a.name} (${a.email})`).join(', ')
 }

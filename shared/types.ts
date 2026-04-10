@@ -16,10 +16,13 @@ export interface Account {
   tokens: AccountTokens
 }
 
-export interface MultiGmailConfig {
+export interface GoogleWorkspaceConfig {
   oauth?: OAuthConfig
   accounts: Account[]
 }
+
+/** @deprecated Use GoogleWorkspaceConfig */
+export type MultiGmailConfig = GoogleWorkspaceConfig
 
 export interface AccountSummary {
   name: string

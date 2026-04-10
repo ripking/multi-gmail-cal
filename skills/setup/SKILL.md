@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Set up the Multi-Gmail plugin — configure OAuth credentials and add Gmail accounts. Use when the user asks to "set up gmail", "configure email", "add gmail account", "connect email", or mentions Google Cloud OAuth setup.
+description: Set up the Google Workspace plugin — configure OAuth credentials and add accounts. Use when the user asks to "set up gmail", "configure email", "add google account", "connect email", or mentions Google Cloud OAuth setup.
 user-invocable: true
 allowed-tools:
   - Read
@@ -9,9 +9,9 @@ allowed-tools:
   - Bash(mkdir *)
 ---
 
-# /multi-gmail:setup — First-Time Setup
+# /google-workspace:setup — First-Time Setup
 
-Guides the user through configuring OAuth and adding their first Gmail account.
+Guides the user through configuring OAuth and adding their first Google account.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -19,7 +19,7 @@ Arguments passed: `$ARGUMENTS`
 
 ## Step 1: Check current state
 
-1. Read `~/.claude/channels/multi-gmail/config.json` (missing file = not configured yet, not an error).
+1. Read `~/.claude/channels/google-workspace/config.json` (missing file = not configured yet, not an error).
 2. Determine state:
    - **No config file** → OAuth not set up yet
    - **Config exists but no `oauth.client_id`** → OAuth not set up yet
@@ -33,13 +33,19 @@ Arguments passed: `$ARGUMENTS`
 Tell the user they need a Google Cloud project with OAuth credentials. Walk them through:
 
 1. Go to https://console.cloud.google.com/ → create a new project (or use existing)
-2. Enable the **Gmail API** under APIs & Services → Library
+2. Enable these APIs under APIs & Services → Library:
+   - **Gmail API**
+   - **Google Calendar API**
+   - **Google Docs API**
+   - **Google Sheets API**
+   - **Google Slides API**
+   - **Google Drive API**
 3. Configure the **OAuth consent screen** (External is fine for personal use, add yourself as a test user)
 4. Create **OAuth 2.0 Client ID** (type: **Desktop app**)
 5. Copy the Client ID and Client Secret
 
 Then tell them to:
-1. Start the management panel: run `bun run panel` in the multi-gmail plugin directory
+1. Start the management panel: run `bun run panel` in the google-workspace plugin directory
 2. Open http://localhost:5000 in their browser
 3. Paste the Client ID and Secret into the OAuth Configuration section and save
 
@@ -52,7 +58,9 @@ Check if the panel is running: `curl -s http://localhost:5000/health`
 
 ### If accounts exist:
 
-Call `multi_gmail_list_accounts` to show the current state. Offer to help add more accounts via the panel if needed.
+Call `gw_list_accounts` to show the current state. Offer to help add more accounts via the panel if needed.
+
+**Note:** If accounts were migrated from the old multi-gmail plugin, they may need to re-authenticate to get access to Calendar, Docs, Sheets, Slides, and Drive APIs. Check if operations beyond Gmail fail with auth errors.
 
 ---
 

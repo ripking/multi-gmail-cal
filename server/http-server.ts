@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /**
- * Multi-Gmail MCP HTTP Server for Claude Desktop.
+ * Google Workspace MCP HTTP Server for Claude Desktop.
  *
  * Runs the same MCP tools as server.ts but over Streamable HTTP transport
  * so Claude Desktop can connect to it as a custom connector.
  *
  * Usage: bun run serve
- * Then add http://localhost:3456/mcp as a custom connector in Claude Desktop.
+ * Then add http://localhost:5001/mcp as a custom connector in Claude Desktop.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -20,7 +20,7 @@ import {
 import { readConfig, findAccount, listAccountSummaries, accountNames } from '../shared/store.ts'
 import { getAuthenticatedClient } from '../shared/auth.ts'
 import { GmailClient } from './gmail-client.ts'
-import type { Account, MultiGmailConfig } from '../shared/types.ts'
+import type { Account, GoogleWorkspaceConfig } from '../shared/types.ts'
 
 const PORT = 5001
 
@@ -35,16 +35,16 @@ function json(data: unknown) {
 }
 
 function noAccounts() {
-  return text('No Gmail accounts configured. Open the management panel (bun run panel → localhost:5000) or run /multi-gmail:setup to get started.')
+  return text('No Google accounts configured. Open the management panel (bun run panel → localhost:5000) or run /google-workspace:setup to get started.')
 }
 
-function unknownAccount(config: MultiGmailConfig, name: string) {
+function unknownAccount(config: GoogleWorkspaceConfig, name: string) {
   return text(`Unknown account "${name}". Available accounts: ${accountNames(config)}`)
 }
 
 async function withAccount(
   args: Record<string, unknown>,
-  fn: (gmail: GmailClient, account: Account, config: MultiGmailConfig) => Promise<unknown>
+  fn: (gmail: GmailClient, account: Account, config: GoogleWorkspaceConfig) => Promise<unknown>
 ) {
   const config = readConfig()
   if (config.accounts.length === 0) return noAccounts()
@@ -62,7 +62,7 @@ async function withAccount(
       return text(`Authentication failed for ${account.name} (${account.email}). Re-authenticate in the management panel at localhost:5000.`)
     }
     if (err.code === 429) {
-      return text(`Rate limited by Gmail API for ${account.name}. Wait a moment and try again.`)
+      return text(`Rate limited by Google API for ${account.name}. Wait a moment and try again.`)
     }
     return text(`Error for ${account.name}: ${err.message}`)
   }
@@ -201,7 +201,7 @@ const tools = [
 
 function createServer(): Server {
   const server = new Server(
-    { name: 'multi-gmail', version: '0.1.0' },
+    { name: 'google-workspace', version: '0.2.0' },
     { capabilities: { tools: {} } }
   )
 
@@ -353,5 +353,5 @@ Bun.serve({
   },
 })
 
-console.log(`Multi-Gmail MCP server running at http://localhost:${PORT}/mcp`)
+console.log(`Google Workspace MCP server running at http://localhost:${PORT}/mcp`)
 console.log(`Add this URL as a custom connector in Claude Desktop.`)

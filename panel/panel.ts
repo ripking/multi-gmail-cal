@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Multi-Gmail Management Panel
+ * Google Workspace Management Panel
  * Localhost web dashboard for account management and OAuth flows.
  */
 
@@ -214,7 +214,7 @@ function callbackPage(success: boolean, message: string): string {
   const color = success ? '#22c55e' : '#ef4444'
   const icon = success ? '&#10003;' : '&#10007;'
   return `<!DOCTYPE html>
-<html><head><title>Multi-Gmail OAuth</title>
+<html><head><title>Google Workspace OAuth</title>
 <style>
   body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #0a0a0a; color: #e5e5e5; }
   .card { text-align: center; padding: 3rem; border-radius: 12px; background: #171717; border: 1px solid #262626; max-width: 400px; }
@@ -232,4 +232,4 @@ function callbackPage(success: boolean, message: string): string {
 </body></html>`
 }
 
-console.log(`Multi-Gmail Management Panel running at http://localhost:${PORT}`)
+console.log(`Google Workspace Management Panel running at http://localhost:${PORT}`)

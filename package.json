@@ -1,6 +1,6 @@
 {
-  "name": "multi-gmail",
-  "version": "0.1.0",
+  "name": "google-workspace",
+  "version": "0.2.0",
   "type": "module",
   "bin": "./server/server.ts",
   "scripts": {

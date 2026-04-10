@@ -1,18 +1,29 @@
 import { OAuth2Client } from 'google-auth-library'
-import type { MultiGmailConfig, Account } from './types.ts'
+import type { GoogleWorkspaceConfig, Account } from './types.ts'
 import { readConfig, writeConfig } from './store.ts'
 
 const SCOPES = [
+  // Gmail
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.labels',
+  // Calendar
+  'https://www.googleapis.com/auth/calendar',
+  // Docs
+  'https://www.googleapis.com/auth/documents',
+  // Sheets
+  'https://www.googleapis.com/auth/spreadsheets',
+  // Slides
+  'https://www.googleapis.com/auth/presentations',
+  // Drive
+  'https://www.googleapis.com/auth/drive',
 ]
 
 export { SCOPES }
 
-export function createOAuth2Client(config: MultiGmailConfig): OAuth2Client {
+export function createOAuth2Client(config: GoogleWorkspaceConfig): OAuth2Client {
   if (!config.oauth) {
     throw new Error('OAuth not configured. Set client_id and client_secret in the management panel.')
   }
@@ -24,7 +35,7 @@ export function createOAuth2Client(config: MultiGmailConfig): OAuth2Client {
 }
 
 export async function getAuthenticatedClient(
-  config: MultiGmailConfig,
+  config: GoogleWorkspaceConfig,
   account: Account
 ): Promise<OAuth2Client> {
   const client = createOAuth2Client(config)
