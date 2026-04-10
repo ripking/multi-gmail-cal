@@ -12,10 +12,11 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { readConfig, findAccount, listAccountSummaries, accountNames } from '../shared/store.ts'
+import { readConfig, findAccount, listAccountSummaries, accountNames, findSlackWorkspace, listSlackWorkspaceSummaries, slackWorkspaceNames } from '../shared/store.ts'
 import { getAuthenticatedClient } from '../shared/auth.ts'
 import { GmailClient } from './gmail-client.ts'
-import type { Account, MultiGmailConfig } from '../shared/types.ts'
+import { SlackClient } from './slack-client.ts'
+import type { Account, SlackWorkspace, MultiGmailConfig } from '../shared/types.ts'
 
 process.on('unhandledRejection', err => {
   process.stderr.write(`multi-gmail: unhandled rejection: ${err}\n`)
@@ -28,15 +29,18 @@ const server = new Server(
   { name: 'multi-gmail', version: '0.1.0' },
   {
     capabilities: { tools: {} },
-    instructions: `Multi-Gmail manages multiple Gmail accounts. Every email tool requires an account parameter — the custom name or email.
+    instructions: `This server manages multiple Gmail accounts and Slack workspaces.
 
-When the user doesn't specify which account:
-- If only one account exists, use it without asking.
-- If multiple exist, ALWAYS ask the user which account before proceeding.
+Gmail tools (multi_gmail_*) require an account parameter — the custom name or email.
+Slack tools (multi_slack_*) require a workspace parameter — the custom name or team name.
 
-Label results clearly with the account name and email. For cross-account tools (search_all, unread_counts), group results by account.
+When the user doesn't specify which account/workspace:
+- If only one exists, use it without asking.
+- If multiple exist, ALWAYS ask the user which one before proceeding.
 
-Account management (add, remove, rename) happens in the management panel at localhost:5000.`,
+Label results clearly with the account/workspace name. For cross-account/workspace tools (search_all), group results accordingly.
+
+Account and workspace management happens in the management panel at localhost:5000.`,
   }
 )
 
@@ -194,7 +198,141 @@ const tools = [
   },
 ]
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }))
+// --- Slack tool definitions ---
+
+const WORKSPACE_PARAM = {
+  workspace: { type: 'string' as const, description: 'Workspace name or team name' },
+}
+
+const slackTools = [
+  {
+    name: 'multi_slack_list_workspaces',
+    description: 'List all connected Slack workspaces with name, team, and token status.',
+    inputSchema: { type: 'object' as const, properties: {} },
+  },
+  {
+    name: 'multi_slack_list_channels',
+    description: 'List channels in a Slack workspace. Returns channel ID, name, topic, purpose, and member count.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...WORKSPACE_PARAM,
+        types: {
+          type: 'array' as const,
+          items: { type: 'string' as const },
+          description: 'Channel types to include (default: ["public_channel", "private_channel"]). Options: public_channel, private_channel, mpim, im',
+        },
+        limit: { type: 'number' as const, description: 'Maximum channels to return (default 200)' },
+      },
+      required: ['workspace'],
+    },
+  },
+  {
+    name: 'multi_slack_read_channel_history',
+    description: 'Read recent messages from a Slack channel. Returns timestamp, user, text, thread info, reactions.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...WORKSPACE_PARAM,
+        channel_id: { type: 'string' as const, description: 'Slack channel ID (e.g., C01ABC123)' },
+        limit: { type: 'number' as const, description: 'Maximum messages to return (default 20)' },
+      },
+      required: ['workspace', 'channel_id'],
+    },
+  },
+  {
+    name: 'multi_slack_post_message',
+    description: 'Post a message to a Slack channel.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...WORKSPACE_PARAM,
+        channel_id: { type: 'string' as const, description: 'Slack channel ID' },
+        text: { type: 'string' as const, description: 'Message text (supports Slack markdown)' },
+      },
+      required: ['workspace', 'channel_id', 'text'],
+    },
+  },
+  {
+    name: 'multi_slack_reply_to_thread',
+    description: 'Reply to a message thread in Slack.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...WORKSPACE_PARAM,
+        channel_id: { type: 'string' as const, description: 'Slack channel ID' },
+        thread_ts: { type: 'string' as const, description: 'Timestamp of the parent message to reply to' },
+        text: { type: 'string' as const, description: 'Reply text (supports Slack markdown)' },
+      },
+      required: ['workspace', 'channel_id', 'thread_ts', 'text'],
+    },
+  },
+  {
+    name: 'multi_slack_search_messages',
+    description: 'Search messages in a Slack workspace. Requires user token (granted during OAuth with user scopes).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...WORKSPACE_PARAM,
+        query: { type: 'string' as const, description: 'Search query (supports Slack search syntax: from:user, in:channel, etc.)' },
+        count: { type: 'number' as const, description: 'Maximum results to return (default 20)' },
+      },
+      required: ['workspace', 'query'],
+    },
+  },
+  {
+    name: 'multi_slack_list_users',
+    description: 'List users in a Slack workspace. Returns ID, name, email, status, and admin info.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...WORKSPACE_PARAM,
+        limit: { type: 'number' as const, description: 'Maximum users to return (default 200)' },
+      },
+      required: ['workspace'],
+    },
+  },
+  {
+    name: 'multi_slack_get_user_info',
+    description: 'Get detailed info about a Slack user by their user ID.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...WORKSPACE_PARAM,
+        user_id: { type: 'string' as const, description: 'Slack user ID (e.g., U01ABC123)' },
+      },
+      required: ['workspace', 'user_id'],
+    },
+  },
+  {
+    name: 'multi_slack_add_reaction',
+    description: 'Add an emoji reaction to a Slack message.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...WORKSPACE_PARAM,
+        channel_id: { type: 'string' as const, description: 'Slack channel ID' },
+        timestamp: { type: 'string' as const, description: 'Message timestamp to react to' },
+        emoji: { type: 'string' as const, description: 'Emoji name without colons (e.g., "thumbsup", "rocket")' },
+      },
+      required: ['workspace', 'channel_id', 'timestamp', 'emoji'],
+    },
+  },
+  {
+    name: 'multi_slack_search_all',
+    description: 'Search messages across ALL connected Slack workspaces. Returns results grouped by workspace. Requires user token per workspace.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string' as const, description: 'Search query' },
+        count: { type: 'number' as const, description: 'Max results per workspace (default 5)' },
+      },
+      required: ['query'],
+    },
+  },
+]
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...tools, ...slackTools] }))
 
 // --- Tool handler helpers ---
 
@@ -237,6 +375,41 @@ async function withAccount(
       return text(`Rate limited by Gmail API for ${account.name}. Wait a moment and try again.`)
     }
     return text(`Error for ${account.name}: ${err.message}`)
+  }
+}
+
+// --- Slack tool handler helpers ---
+
+function noSlackWorkspaces() {
+  return text('No Slack workspaces configured. Open the management panel (bun run panel → localhost:5000) to add a Slack workspace.')
+}
+
+function unknownSlackWorkspace(config: MultiGmailConfig, name: string) {
+  return text(`Unknown workspace "${name}". Available workspaces: ${slackWorkspaceNames(config)}`)
+}
+
+async function withSlackWorkspace(
+  args: Record<string, unknown>,
+  fn: (slack: SlackClient, workspace: SlackWorkspace, config: MultiGmailConfig) => Promise<unknown>
+) {
+  const config = readConfig()
+  if (config.slack_workspaces.length === 0) return noSlackWorkspaces()
+
+  const workspace = findSlackWorkspace(config, args.workspace as string)
+  if (!workspace) return unknownSlackWorkspace(config, args.workspace as string)
+
+  try {
+    const slack = new SlackClient(workspace.bot_token, workspace.user_token)
+    const result = await fn(slack, workspace, config)
+    return json(result)
+  } catch (err: any) {
+    if (err.code === 'token_revoked' || err.data?.error === 'token_revoked' || err.data?.error === 'invalid_auth') {
+      return text(`Authentication failed for workspace ${workspace.name} (${workspace.team_name}). Re-authorize in the management panel at localhost:5000.`)
+    }
+    if (err.data?.error === 'ratelimited') {
+      return text(`Rate limited by Slack API for ${workspace.name}. Wait a moment and try again.`)
+    }
+    return text(`Error for ${workspace.name}: ${err.message}`)
   }
 }
 
@@ -349,6 +522,75 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         }
       }
       return json(counts)
+    }
+
+    // --- Slack tools ---
+
+    case 'multi_slack_list_workspaces': {
+      const config = readConfig()
+      if (config.slack_workspaces.length === 0) return noSlackWorkspaces()
+      return json(listSlackWorkspaceSummaries(config))
+    }
+
+    case 'multi_slack_list_channels':
+      return withSlackWorkspace(args, async (slack) =>
+        slack.listChannels(args.types as string[] | undefined, (args.limit as number) || 200)
+      )
+
+    case 'multi_slack_read_channel_history':
+      return withSlackWorkspace(args, async (slack) =>
+        slack.getChannelHistory(args.channel_id as string, (args.limit as number) || 20)
+      )
+
+    case 'multi_slack_post_message':
+      return withSlackWorkspace(args, async (slack) =>
+        slack.postMessage(args.channel_id as string, args.text as string)
+      )
+
+    case 'multi_slack_reply_to_thread':
+      return withSlackWorkspace(args, async (slack) =>
+        slack.replyToThread(args.channel_id as string, args.thread_ts as string, args.text as string)
+      )
+
+    case 'multi_slack_search_messages':
+      return withSlackWorkspace(args, async (slack) =>
+        slack.searchMessages(args.query as string, (args.count as number) || 20)
+      )
+
+    case 'multi_slack_list_users':
+      return withSlackWorkspace(args, async (slack) =>
+        slack.listUsers((args.limit as number) || 200)
+      )
+
+    case 'multi_slack_get_user_info':
+      return withSlackWorkspace(args, async (slack) =>
+        slack.getUserInfo(args.user_id as string)
+      )
+
+    case 'multi_slack_add_reaction':
+      return withSlackWorkspace(args, async (slack) =>
+        slack.addReaction(args.channel_id as string, args.timestamp as string, args.emoji as string)
+      )
+
+    case 'multi_slack_search_all': {
+      const config = readConfig()
+      if (config.slack_workspaces.length === 0) return noSlackWorkspaces()
+
+      const countPer = (args.count as number) || 5
+      const results: Record<string, unknown> = {}
+
+      for (const workspace of config.slack_workspaces) {
+        try {
+          const slack = new SlackClient(workspace.bot_token, workspace.user_token)
+          results[`${workspace.name} (${workspace.team_name})`] = await slack.searchMessages(
+            args.query as string,
+            countPer
+          )
+        } catch (err: any) {
+          results[`${workspace.name} (${workspace.team_name})`] = { error: err.message }
+        }
+      }
+      return json(results)
     }
 
     default:

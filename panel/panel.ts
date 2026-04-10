@@ -6,17 +6,20 @@
 
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { readConfig, writeConfig, findAccount } from '../shared/store.ts'
+import { readConfig, writeConfig, findAccount, findSlackWorkspace } from '../shared/store.ts'
 import { getAuthenticatedClient } from '../shared/auth.ts'
 import { GmailClient } from '../server/gmail-client.ts'
 import { generateAuthUrl, exchangeCode, getEmailFromTokens } from './oauth.ts'
+import { generateSlackAuthUrl, exchangeSlackCode } from './slack-oauth.ts'
 
 const PORT = 5000
 const PUBLIC_DIR = join(import.meta.dir, 'public')
 const DEFAULT_REDIRECT_URI = `http://localhost:${PORT}/oauth/callback`
+const DEFAULT_SLACK_REDIRECT_URI = `http://localhost:${PORT}/slack/oauth/callback`
 
 // In-memory pending auth state: name → true
 const pendingAuths = new Map<string, boolean>()
+const pendingSlackAuths = new Map<string, boolean>()
 
 function serveStatic(filename: string, contentType: string): Response {
   try {
@@ -201,6 +204,161 @@ const server = Bun.serve({
         pendingAuths.delete(accountName)
         return new Response(
           callbackPage(false, `Failed to complete auth: ${err.message}`),
+          { headers: { 'Content-Type': 'text/html' } }
+        )
+      }
+    }
+
+    // --- Slack API: OAuth config ---
+    if (path === '/api/slack-oauth-config' && req.method === 'GET') {
+      const config = readConfig()
+      return jsonResponse({
+        configured: !!config.slack_oauth?.client_id,
+        redirect_uri: config.slack_oauth?.redirect_uri || DEFAULT_SLACK_REDIRECT_URI,
+      })
+    }
+
+    if (path === '/api/slack-oauth-config' && req.method === 'POST') {
+      const body = await parseBody(req)
+      const config = readConfig()
+      config.slack_oauth = {
+        client_id: body.client_id as string,
+        client_secret: body.client_secret as string,
+        redirect_uri: (body.redirect_uri as string) || DEFAULT_SLACK_REDIRECT_URI,
+      }
+      writeConfig(config)
+      return jsonResponse({ success: true })
+    }
+
+    // --- Slack API: Workspaces ---
+    if (path === '/api/slack-workspaces' && req.method === 'GET') {
+      const config = readConfig()
+      const workspaces = config.slack_workspaces.map(w => ({
+        name: w.name,
+        team_id: w.team_id,
+        team_name: w.team_name,
+        hasUserToken: !!w.user_token,
+      }))
+      return jsonResponse({ workspaces })
+    }
+
+    if (path === '/api/slack-workspaces/add' && req.method === 'POST') {
+      const body = await parseBody(req)
+      const name = (body.name as string || '').trim()
+      if (!name) return jsonResponse({ error: 'Workspace name is required' }, 400)
+
+      const config = readConfig()
+      if (!config.slack_oauth?.client_id) {
+        return jsonResponse({ error: 'Slack OAuth not configured. Save your Slack Client ID and Secret first.' }, 400)
+      }
+      if (findSlackWorkspace(config, name)) {
+        return jsonResponse({ error: `Workspace "${name}" already exists` }, 400)
+      }
+
+      const state = encodeURIComponent(name)
+      const authUrl = generateSlackAuthUrl(config.slack_oauth, state)
+      pendingSlackAuths.set(name, true)
+      return jsonResponse({ authUrl, name })
+    }
+
+    if (path === '/api/slack-workspaces/remove' && req.method === 'POST') {
+      const body = await parseBody(req)
+      const name = (body.name as string || '').trim()
+      const config = readConfig()
+      const idx = config.slack_workspaces.findIndex(
+        w => w.name.toLowerCase() === name.toLowerCase()
+      )
+      if (idx === -1) return jsonResponse({ error: `Workspace "${name}" not found` }, 404)
+      config.slack_workspaces.splice(idx, 1)
+      writeConfig(config)
+      return jsonResponse({ success: true })
+    }
+
+    if (path === '/api/slack-workspaces/rename' && req.method === 'POST') {
+      const body = await parseBody(req)
+      const name = (body.name as string || '').trim()
+      const newName = (body.newName as string || '').trim()
+      if (!newName) return jsonResponse({ error: 'New name is required' }, 400)
+
+      const config = readConfig()
+      const workspace = findSlackWorkspace(config, name)
+      if (!workspace) return jsonResponse({ error: `Workspace "${name}" not found` }, 404)
+      if (findSlackWorkspace(config, newName)) return jsonResponse({ error: `Workspace "${newName}" already exists` }, 400)
+
+      workspace.name = newName
+      writeConfig(config)
+      return jsonResponse({ success: true })
+    }
+
+    if (path === '/api/slack-workspaces/test' && req.method === 'POST') {
+      const body = await parseBody(req)
+      const name = (body.name as string || '').trim()
+      const config = readConfig()
+      const workspace = findSlackWorkspace(config, name)
+      if (!workspace) return jsonResponse({ error: `Workspace "${name}" not found` }, 404)
+
+      try {
+        const { SlackClient } = await import('../server/slack-client.ts')
+        const slack = new SlackClient(workspace.bot_token, workspace.user_token)
+        const authResult = await slack.testAuth()
+        return jsonResponse({ success: true, auth: authResult })
+      } catch (err: any) {
+        return jsonResponse({ success: false, error: err.message }, 500)
+      }
+    }
+
+    // --- Slack OAuth callback ---
+    if (path === '/slack/oauth/callback' && req.method === 'GET') {
+      const code = url.searchParams.get('code')
+      const state = url.searchParams.get('state')
+      const error = url.searchParams.get('error')
+
+      if (error) {
+        return new Response(callbackPage(false, `Slack OAuth error: ${error}`), {
+          headers: { 'Content-Type': 'text/html' },
+        })
+      }
+
+      if (!code || !state) {
+        return new Response(callbackPage(false, 'Missing code or state parameter'), {
+          headers: { 'Content-Type': 'text/html' },
+        })
+      }
+
+      const workspaceName = decodeURIComponent(state)
+
+      try {
+        const config = readConfig()
+        if (!config.slack_oauth) throw new Error('Slack OAuth not configured')
+
+        const result = await exchangeSlackCode(config.slack_oauth, code)
+        result.name = workspaceName
+
+        // Check if this team is already connected under another name
+        const existing = config.slack_workspaces.find(w => w.team_id === result.team_id)
+        if (existing) {
+          existing.bot_token = result.bot_token
+          existing.bot_user_id = result.bot_user_id
+          existing.authed_user_id = result.authed_user_id
+          existing.user_token = result.user_token
+          existing.name = workspaceName
+          existing.team_name = result.team_name
+        } else {
+          const { _raw_name, ...workspace } = result
+          config.slack_workspaces.push(workspace)
+        }
+
+        writeConfig(config)
+        pendingSlackAuths.delete(workspaceName)
+
+        return new Response(
+          callbackPage(true, `Slack workspace "${workspaceName}" connected as ${result.team_name}`),
+          { headers: { 'Content-Type': 'text/html' } }
+        )
+      } catch (err: any) {
+        pendingSlackAuths.delete(workspaceName)
+        return new Response(
+          callbackPage(false, `Failed to complete Slack auth: ${err.message}`),
           { headers: { 'Content-Type': 'text/html' } }
         )
       }

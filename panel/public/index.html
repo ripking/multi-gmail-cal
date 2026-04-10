@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multi-Gmail Manager</title>
+  <title>Multi-Gmail &amp; Slack Manager</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Multi-Gmail Manager</h1>
-      <p class="subtitle">Manage your connected Gmail accounts for Claude</p>
+      <h1>Multi-Gmail &amp; Slack Manager</h1>
+      <p class="subtitle">Manage your connected Gmail accounts and Slack workspaces for Claude</p>
     </header>
 
     <!-- OAuth Configuration -->
@@ -40,10 +40,10 @@
       </div>
     </section>
 
-    <!-- Setup Instructions -->
+    <!-- Gmail Setup Instructions -->
     <section class="card collapsible">
       <h2 class="collapsible-header" onclick="toggleSection(this)">
-        Setup Instructions
+        Gmail Setup Instructions
         <span class="chevron">&#9660;</span>
       </h2>
       <div class="collapsible-content" style="display: none;">
@@ -54,6 +54,53 @@
           <li>Create an <strong>OAuth 2.0 Client ID</strong> (type: Desktop app)</li>
           <li>Copy the Client ID and Client Secret into the form above</li>
           <li>Click <strong>Add Account</strong> below and sign in with each Gmail account</li>
+        </ol>
+      </div>
+    </section>
+
+    <hr class="section-divider">
+
+    <!-- Slack OAuth Configuration -->
+    <section id="slack-oauth-section" class="card">
+      <h2>Slack OAuth Configuration</h2>
+      <div id="slack-oauth-status" class="status-badge"></div>
+      <div class="form-group">
+        <label for="slack-client-id">Slack Client ID</label>
+        <input type="text" id="slack-client-id" placeholder="Your Slack App Client ID">
+      </div>
+      <div class="form-group">
+        <label for="slack-client-secret">Slack Client Secret</label>
+        <input type="password" id="slack-client-secret" placeholder="Your Slack App Client Secret">
+      </div>
+      <button id="save-slack-oauth" class="btn btn-primary">Save Slack OAuth Config</button>
+    </section>
+
+    <!-- Slack Workspaces -->
+    <section id="slack-workspaces-section" class="card">
+      <h2>Connected Slack Workspaces</h2>
+      <div id="slack-workspaces-list">
+        <p class="empty-state">Loading...</p>
+      </div>
+      <div class="add-account-row">
+        <input type="text" id="new-workspace-name" placeholder="Workspace name (e.g., Work, Community)">
+        <button id="add-workspace" class="btn btn-primary">Add Workspace</button>
+      </div>
+    </section>
+
+    <!-- Slack Setup Instructions -->
+    <section class="card collapsible">
+      <h2 class="collapsible-header" onclick="toggleSection(this)">
+        Slack Setup Instructions
+        <span class="chevron">&#9660;</span>
+      </h2>
+      <div class="collapsible-content" style="display: none;">
+        <ol>
+          <li>Go to <a href="https://api.slack.com/apps" target="_blank">Slack API Apps</a> and click <strong>Create New App</strong> &rarr; <strong>From scratch</strong></li>
+          <li>Under <strong>OAuth &amp; Permissions</strong>, add a Redirect URL: <code>http://localhost:5000/slack/oauth/callback</code></li>
+          <li>Add <strong>Bot Token Scopes</strong>: channels:read, channels:history, chat:write, users:read, users:read.email, groups:read, groups:history, im:read, im:history, mpim:read, mpim:history, reactions:read, reactions:write, files:read</li>
+          <li>Add <strong>User Token Scopes</strong>: search:read</li>
+          <li>Go to <strong>Basic Information</strong>, copy the <strong>Client ID</strong> and <strong>Client Secret</strong> into the form above</li>
+          <li>Click <strong>Add Workspace</strong> below and authorize for each Slack workspace</li>
         </ol>
       </div>
     </section>

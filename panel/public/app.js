@@ -1,14 +1,20 @@
 // --- State ---
 let oauthConfigured = false
+let slackOAuthConfigured = false
 let pollInterval = null
+let slackPollInterval = null
 
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
   loadOAuthConfig()
   loadAccounts()
+  loadSlackOAuthConfig()
+  loadSlackWorkspaces()
 
   document.getElementById('save-oauth').addEventListener('click', saveOAuthConfig)
   document.getElementById('add-account').addEventListener('click', addAccount)
+  document.getElementById('save-slack-oauth').addEventListener('click', saveSlackOAuthConfig)
+  document.getElementById('add-workspace').addEventListener('click', addSlackWorkspace)
 })
 
 // --- OAuth Config ---
@@ -204,6 +210,203 @@ async function testAccount(name) {
     const data = await res.json()
     if (data.success) {
       toast(`${name}: Connected as ${data.profile.email} (${data.profile.messagesTotal} messages)`, 'success')
+    } else {
+      toast(`${name}: Connection failed — ${data.error}`, 'error')
+    }
+  } catch (err) {
+    toast(`${name}: Test failed — ${err.message}`, 'error')
+  }
+}
+
+// --- Slack OAuth Config ---
+async function loadSlackOAuthConfig() {
+  try {
+    const res = await fetch('/api/slack-oauth-config')
+    const data = await res.json()
+    slackOAuthConfigured = data.configured
+    updateSlackOAuthStatus()
+  } catch (err) {
+    console.error('Failed to load Slack OAuth config:', err)
+  }
+}
+
+function updateSlackOAuthStatus() {
+  const badge = document.getElementById('slack-oauth-status')
+  if (slackOAuthConfigured) {
+    badge.textContent = 'Configured'
+    badge.className = 'status-badge status-ok'
+  } else {
+    badge.textContent = 'Not configured'
+    badge.className = 'status-badge status-missing'
+  }
+}
+
+async function saveSlackOAuthConfig() {
+  const clientId = document.getElementById('slack-client-id').value.trim()
+  const clientSecret = document.getElementById('slack-client-secret').value.trim()
+
+  if (!clientId || !clientSecret) {
+    toast('Both Slack Client ID and Client Secret are required', 'error')
+    return
+  }
+
+  try {
+    const res = await fetch('/api/slack-oauth-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+    })
+    const data = await res.json()
+    if (data.success) {
+      slackOAuthConfigured = true
+      updateSlackOAuthStatus()
+      document.getElementById('slack-client-id').value = ''
+      document.getElementById('slack-client-secret').value = ''
+      toast('Slack OAuth configuration saved', 'success')
+    }
+  } catch (err) {
+    toast('Failed to save Slack OAuth config: ' + err.message, 'error')
+  }
+}
+
+// --- Slack Workspaces ---
+async function loadSlackWorkspaces() {
+  try {
+    const res = await fetch('/api/slack-workspaces')
+    const data = await res.json()
+    renderSlackWorkspaces(data.workspaces)
+  } catch (err) {
+    console.error('Failed to load Slack workspaces:', err)
+  }
+}
+
+function renderSlackWorkspaces(workspaces) {
+  const list = document.getElementById('slack-workspaces-list')
+
+  if (!workspaces || workspaces.length === 0) {
+    list.innerHTML = '<p class="empty-state">No Slack workspaces connected yet. Add one below.</p>'
+    return
+  }
+
+  list.innerHTML = workspaces.map(w => `
+    <div class="account-row">
+      <div class="account-info">
+        <div class="account-name">${esc(w.name)}</div>
+        <div class="account-email">${esc(w.team_name)} ${w.hasUserToken ? '(bot + user token)' : '(bot token only)'}</div>
+      </div>
+      <span class="status-badge status-ok">Connected</span>
+      <div class="account-actions">
+        <button class="btn btn-secondary btn-small" onclick="testSlackWorkspace('${esc(w.name)}')">Test</button>
+        <button class="btn btn-secondary btn-small" onclick="renameSlackWorkspace('${esc(w.name)}')">Rename</button>
+        <button class="btn btn-danger btn-small" onclick="removeSlackWorkspace('${esc(w.name)}')">Remove</button>
+      </div>
+    </div>
+  `).join('')
+}
+
+async function addSlackWorkspace() {
+  const nameInput = document.getElementById('new-workspace-name')
+  const name = nameInput.value.trim()
+  if (!name) {
+    toast('Enter a name for the workspace', 'error')
+    return
+  }
+
+  if (!slackOAuthConfigured) {
+    toast('Save your Slack OAuth configuration first', 'error')
+    return
+  }
+
+  try {
+    const res = await fetch('/api/slack-workspaces/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+
+    if (data.error) {
+      toast(data.error, 'error')
+      return
+    }
+
+    window.open(data.authUrl, '_blank')
+    nameInput.value = ''
+    toast('Authorize in Slack in the new tab...', 'success')
+
+    startSlackPolling()
+  } catch (err) {
+    toast('Failed to start Slack auth: ' + err.message, 'error')
+  }
+}
+
+function startSlackPolling() {
+  if (slackPollInterval) clearInterval(slackPollInterval)
+  let attempts = 0
+  slackPollInterval = setInterval(async () => {
+    attempts++
+    await loadSlackWorkspaces()
+    if (attempts >= 30) {
+      clearInterval(slackPollInterval)
+      slackPollInterval = null
+    }
+  }, 2000)
+}
+
+async function removeSlackWorkspace(name) {
+  if (!confirm(`Remove workspace "${name}"? This will delete its tokens.`)) return
+
+  try {
+    const res = await fetch('/api/slack-workspaces/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+    if (data.error) {
+      toast(data.error, 'error')
+    } else {
+      toast(`Workspace "${name}" removed`, 'success')
+      loadSlackWorkspaces()
+    }
+  } catch (err) {
+    toast('Failed to remove workspace: ' + err.message, 'error')
+  }
+}
+
+async function renameSlackWorkspace(name) {
+  const newName = prompt(`Rename "${name}" to:`)
+  if (!newName || newName.trim() === name) return
+
+  try {
+    const res = await fetch('/api/slack-workspaces/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, newName: newName.trim() }),
+    })
+    const data = await res.json()
+    if (data.error) {
+      toast(data.error, 'error')
+    } else {
+      toast(`Renamed to "${newName.trim()}"`, 'success')
+      loadSlackWorkspaces()
+    }
+  } catch (err) {
+    toast('Failed to rename workspace: ' + err.message, 'error')
+  }
+}
+
+async function testSlackWorkspace(name) {
+  toast(`Testing ${name}...`, 'success')
+  try {
+    const res = await fetch('/api/slack-workspaces/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+    if (data.success) {
+      toast(`${name}: Connected to ${data.auth.team} as ${data.auth.user}`, 'success')
     } else {
       toast(`${name}: Connection failed — ${data.error}`, 'error')
     }
