@@ -4,4 +4,5 @@ certs/
 .env
 .env.local
 *.log
+*.pem
 .DS_Store
