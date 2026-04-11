@@ -13,8 +13,9 @@ import { generateAuthUrl, exchangeCode, getEmailFromTokens } from './oauth.ts'
 import { generateSlackAuthUrl, exchangeSlackCode } from './slack-oauth.ts'
 
 const PORT = 5000
+const HTTP_PORT = 5080
 const PUBLIC_DIR = join(import.meta.dir, 'public')
-const DEFAULT_REDIRECT_URI = `http://localhost:${PORT}/oauth/callback`
+const DEFAULT_REDIRECT_URI = `http://localhost:${HTTP_PORT}/oauth/callback`
 const DEFAULT_SLACK_REDIRECT_URI = `https://localhost:${PORT}/slack/oauth/callback`
 
 // In-memory pending auth state: name → true
@@ -411,4 +412,72 @@ console.log(`Multi-Gmail Management Panel running at ${protocol}://localhost:${P
 if (!tlsConfig) {
   console.log('Warning: Running without HTTPS. Slack OAuth requires HTTPS.')
   console.log('Run: mkcert -cert-file panel/localhost-cert.pem -key-file panel/localhost-key.pem localhost 127.0.0.1')
+}
+
+// --- HTTP server for Google OAuth callback ---
+// Google Desktop OAuth requires http:// for localhost redirects.
+// This small HTTP server handles only the Google OAuth callback,
+// then redirects the browser to the HTTPS panel.
+if (tlsConfig) {
+  Bun.serve({
+    port: HTTP_PORT,
+    async fetch(req) {
+      const url = new URL(req.url)
+      const path = url.pathname
+
+      if (path === '/oauth/callback' && req.method === 'GET') {
+        const code = url.searchParams.get('code')
+        const state = url.searchParams.get('state')
+        const error = url.searchParams.get('error')
+
+        if (error) {
+          return new Response(callbackPage(false, `OAuth error: ${error}`), {
+            headers: { 'Content-Type': 'text/html' },
+          })
+        }
+
+        if (!code || !state) {
+          return new Response(callbackPage(false, 'Missing code or state parameter'), {
+            headers: { 'Content-Type': 'text/html' },
+          })
+        }
+
+        const accountName = decodeURIComponent(state)
+
+        try {
+          const config = readConfig()
+          if (!config.oauth) throw new Error('OAuth not configured')
+
+          const tokens = await exchangeCode(config.oauth, code)
+          const email = await getEmailFromTokens(config.oauth, tokens)
+
+          const existing = config.accounts.find(a => a.email === email)
+          if (existing) {
+            existing.tokens = tokens
+            existing.name = accountName
+          } else {
+            config.accounts.push({ name: accountName, email, tokens })
+          }
+
+          writeConfig(config)
+          pendingAuths.delete(accountName)
+
+          return new Response(
+            callbackPage(true, `Account "${accountName}" connected as ${email}`),
+            { headers: { 'Content-Type': 'text/html' } }
+          )
+        } catch (err: any) {
+          pendingAuths.delete(accountName)
+          return new Response(
+            callbackPage(false, `Failed to complete auth: ${err.message}`),
+            { headers: { 'Content-Type': 'text/html' } }
+          )
+        }
+      }
+
+      // Redirect everything else to the HTTPS panel
+      return Response.redirect(`https://localhost:${PORT}${path}${url.search}`, 302)
+    },
+  })
+  console.log(`Google OAuth callback server running at http://localhost:${HTTP_PORT}`)
 }
