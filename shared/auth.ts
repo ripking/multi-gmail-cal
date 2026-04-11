@@ -3,11 +3,22 @@ import type { MultiGmailConfig, Account } from './types.ts'
 import { readConfig, writeConfig } from './store.ts'
 
 const SCOPES = [
+  // Gmail
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.labels',
+  // Calendar
+  'https://www.googleapis.com/auth/calendar',
+  // Docs
+  'https://www.googleapis.com/auth/documents',
+  // Sheets
+  'https://www.googleapis.com/auth/spreadsheets',
+  // Slides
+  'https://www.googleapis.com/auth/presentations',
+  // Drive
+  'https://www.googleapis.com/auth/drive',
 ]
 
 export { SCOPES }

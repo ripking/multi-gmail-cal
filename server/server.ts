@@ -15,8 +15,14 @@ import {
 import { readConfig, findAccount, listAccountSummaries, accountNames, findSlackWorkspace, listSlackWorkspaceSummaries, slackWorkspaceNames } from '../shared/store.ts'
 import { getAuthenticatedClient } from '../shared/auth.ts'
 import { GmailClient } from './gmail-client.ts'
+import { CalendarClient } from './calendar-client.ts'
+import { DriveClient } from './drive-client.ts'
+import { DocsClient } from './docs-client.ts'
+import { SheetsClient } from './sheets-client.ts'
+import { SlidesClient } from './slides-client.ts'
 import { SlackClient } from './slack-client.ts'
 import type { Account, SlackWorkspace, MultiGmailConfig } from '../shared/types.ts'
+import type { OAuth2Client } from 'google-auth-library'
 
 process.on('unhandledRejection', err => {
   process.stderr.write(`multi-gmail: unhandled rejection: ${err}\n`)
@@ -29,16 +35,16 @@ const server = new Server(
   { name: 'multi-gmail', version: '0.1.0' },
   {
     capabilities: { tools: {} },
-    instructions: `This server manages multiple Gmail accounts and Slack workspaces.
+    instructions: `This server manages multiple Google Workspace accounts (Gmail, Calendar, Drive, Docs, Sheets, Slides) and Slack workspaces.
 
-Gmail tools (multi_gmail_*) require an account parameter — the custom name or email.
+Google tools (multi_gmail_*, gw_calendar_*, gw_drive_*, gw_docs_*, gw_sheets_*, gw_slides_*) require an account parameter — the custom name or email.
 Slack tools (multi_slack_*) require a workspace parameter — the custom name or team name.
 
 When the user doesn't specify which account/workspace:
 - If only one exists, use it without asking.
 - If multiple exist, ALWAYS ask the user which one before proceeding.
 
-Label results clearly with the account/workspace name. For cross-account/workspace tools (search_all), group results accordingly.
+Label results clearly with the account/workspace name. For cross-account/workspace tools (*_all), group results accordingly.
 
 Account and workspace management happens in the management panel at localhost:5000.`,
   }
@@ -198,6 +204,291 @@ const tools = [
   },
 ]
 
+// --- Google Workspace tool definitions (Calendar, Drive, Docs, Sheets, Slides) ---
+
+const workspaceTools = [
+  // === Calendar ===
+  {
+    name: 'gw_calendar_list_calendars',
+    description: 'List all calendars for the account (primary, shared, subscribed).',
+    inputSchema: { type: 'object' as const, properties: ACCOUNT_PARAM, required: ['account'] },
+  },
+  {
+    name: 'gw_calendar_list_events',
+    description: 'List upcoming events from a calendar. Defaults to primary calendar and next 7 days.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...ACCOUNT_PARAM,
+        calendar_id: { type: 'string' as const, description: 'Calendar ID (default: "primary")' },
+        time_min: { type: 'string' as const, description: 'Start of time range (ISO 8601). Defaults to now.' },
+        time_max: { type: 'string' as const, description: 'End of time range (ISO 8601). Defaults to 7 days from now.' },
+        max_results: { type: 'number' as const, description: 'Maximum events to return (default 20)' },
+      },
+      required: ['account'],
+    },
+  },
+  {
+    name: 'gw_calendar_get_event',
+    description: 'Get full details of a calendar event by ID.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...ACCOUNT_PARAM,
+        calendar_id: { type: 'string' as const, description: 'Calendar ID (default: "primary")' },
+        event_id: { type: 'string' as const, description: 'Event ID' },
+      },
+      required: ['account', 'event_id'],
+    },
+  },
+  {
+    name: 'gw_calendar_create_event',
+    description: 'Create a new calendar event. Returns event ID and link.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...ACCOUNT_PARAM,
+        calendar_id: { type: 'string' as const, description: 'Calendar ID (default: "primary")' },
+        summary: { type: 'string' as const, description: 'Event title' },
+        start: { type: 'string' as const, description: 'Start time (ISO 8601, e.g., "2025-06-15T10:00:00-04:00")' },
+        end: { type: 'string' as const, description: 'End time (ISO 8601)' },
+        description: { type: 'string' as const, description: 'Event description (optional)' },
+        location: { type: 'string' as const, description: 'Event location (optional)' },
+        attendees: { type: 'array' as const, items: { type: 'string' as const }, description: 'Attendee email addresses (optional)' },
+      },
+      required: ['account', 'summary', 'start', 'end'],
+    },
+  },
+  {
+    name: 'gw_calendar_update_event',
+    description: 'Update fields on an existing calendar event.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...ACCOUNT_PARAM,
+        calendar_id: { type: 'string' as const, description: 'Calendar ID (default: "primary")' },
+        event_id: { type: 'string' as const, description: 'Event ID' },
+        summary: { type: 'string' as const, description: 'New event title' },
+        start: { type: 'string' as const, description: 'New start time (ISO 8601)' },
+        end: { type: 'string' as const, description: 'New end time (ISO 8601)' },
+        description: { type: 'string' as const, description: 'New description' },
+        location: { type: 'string' as const, description: 'New location' },
+        attendees: { type: 'array' as const, items: { type: 'string' as const }, description: 'New attendee list (replaces existing)' },
+      },
+      required: ['account', 'event_id'],
+    },
+  },
+  {
+    name: 'gw_calendar_delete_event',
+    description: 'Delete a calendar event.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ...ACCOUNT_PARAM,
+        calendar_id: { type: 'string' as const, description: 'Calendar ID (default: "primary")' },
+        event_id: { type: 'string' as const, description: 'Event ID to delete' },
+      },
+      required: ['account', 'event_id'],
+    },
+  },
+  {
+    name: 'gw_calendar_list_events_all',
+    description: 'List upcoming events across ALL connected accounts. Returns events grouped by account.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        time_min: { type: 'string' as const, description: 'Start of time range (ISO 8601). Defaults to now.' },
+        time_max: { type: 'string' as const, description: 'End of time range (ISO 8601). Defaults to 7 days from now.' },
+        max_results: { type: 'number' as const, description: 'Max events per account (default 10)' },
+      },
+    },
+  },
+  // === Drive ===
+  {
+    name: 'gw_drive_list',
+    description: 'List files in a Drive folder. Defaults to root.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, folder_id: { type: 'string' as const, description: 'Folder ID (default: "root")' }, max_results: { type: 'number' as const, description: 'Maximum files to return (default 20)' } },
+      required: ['account'],
+    },
+  },
+  {
+    name: 'gw_drive_search',
+    description: 'Search for files in Drive by name.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, query: { type: 'string' as const, description: 'Search query (file name or keywords)' }, mime_type: { type: 'string' as const, description: 'Filter by MIME type' }, max_results: { type: 'number' as const, description: 'Maximum results (default 20)' } },
+      required: ['account', 'query'],
+    },
+  },
+  {
+    name: 'gw_drive_get',
+    description: 'Get file metadata — name, type, size, owners, shared status, web link.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, file_id: { type: 'string' as const, description: 'Drive file ID' } },
+      required: ['account', 'file_id'],
+    },
+  },
+  {
+    name: 'gw_drive_create_folder',
+    description: 'Create a new folder in Drive.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, name: { type: 'string' as const, description: 'Folder name' }, parent_id: { type: 'string' as const, description: 'Parent folder ID (default: root)' } },
+      required: ['account', 'name'],
+    },
+  },
+  {
+    name: 'gw_drive_share',
+    description: 'Share a file or folder with a user or make it public.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, file_id: { type: 'string' as const, description: 'File or folder ID' }, email: { type: 'string' as const, description: 'Email to share with (omit for public link)' }, role: { type: 'string' as const, description: 'Permission role: "reader", "writer", or "commenter" (default: "reader")' } },
+      required: ['account', 'file_id'],
+    },
+  },
+  {
+    name: 'gw_drive_download',
+    description: 'Download or export file content (text-based files only). Google Docs/Sheets/Slides are exported as plain text/CSV.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, file_id: { type: 'string' as const, description: 'Drive file ID' } },
+      required: ['account', 'file_id'],
+    },
+  },
+  {
+    name: 'gw_drive_search_all',
+    description: 'Search files across ALL connected accounts. Returns results grouped by account.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { query: { type: 'string' as const, description: 'Search query' }, max_results: { type: 'number' as const, description: 'Max results per account (default 5)' } },
+      required: ['query'],
+    },
+  },
+  // === Docs ===
+  {
+    name: 'gw_docs_get',
+    description: "Get a Google Doc's content as plain text.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, document_id: { type: 'string' as const, description: 'Google Docs document ID' } },
+      required: ['account', 'document_id'],
+    },
+  },
+  {
+    name: 'gw_docs_create',
+    description: 'Create a new Google Doc with a title. Returns document ID and link.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, title: { type: 'string' as const, description: 'Document title' } },
+      required: ['account', 'title'],
+    },
+  },
+  {
+    name: 'gw_docs_append',
+    description: 'Append text to the end of a Google Doc.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, document_id: { type: 'string' as const, description: 'Google Docs document ID' }, text: { type: 'string' as const, description: 'Text to append' } },
+      required: ['account', 'document_id', 'text'],
+    },
+  },
+  {
+    name: 'gw_docs_search',
+    description: 'Search for Google Docs by name.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, query: { type: 'string' as const, description: 'Search query (document name)' }, max_results: { type: 'number' as const, description: 'Maximum results (default 20)' } },
+      required: ['account', 'query'],
+    },
+  },
+  // === Sheets ===
+  {
+    name: 'gw_sheets_get',
+    description: 'Get spreadsheet metadata — sheet names, row/column counts, properties.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, spreadsheet_id: { type: 'string' as const, description: 'Google Sheets spreadsheet ID' } },
+      required: ['account', 'spreadsheet_id'],
+    },
+  },
+  {
+    name: 'gw_sheets_read',
+    description: 'Read cell data from a sheet range (e.g., "Sheet1!A1:D10").',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, spreadsheet_id: { type: 'string' as const, description: 'Google Sheets spreadsheet ID' }, range: { type: 'string' as const, description: 'Cell range in A1 notation (e.g., "Sheet1!A1:D10")' } },
+      required: ['account', 'spreadsheet_id', 'range'],
+    },
+  },
+  {
+    name: 'gw_sheets_write',
+    description: 'Write data to a sheet range. Values is a 2D array (rows of columns).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, spreadsheet_id: { type: 'string' as const, description: 'Google Sheets spreadsheet ID' }, range: { type: 'string' as const, description: 'Cell range in A1 notation' }, values: { type: 'array' as const, items: { type: 'array' as const, items: { type: 'string' as const } }, description: 'Data to write: array of rows, each row is an array of cell values' } },
+      required: ['account', 'spreadsheet_id', 'range', 'values'],
+    },
+  },
+  {
+    name: 'gw_sheets_create',
+    description: 'Create a new Google Sheets spreadsheet. Returns spreadsheet ID and link.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, title: { type: 'string' as const, description: 'Spreadsheet title' } },
+      required: ['account', 'title'],
+    },
+  },
+  {
+    name: 'gw_sheets_search',
+    description: 'Search for Google Sheets spreadsheets by name.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, query: { type: 'string' as const, description: 'Search query (spreadsheet name)' }, max_results: { type: 'number' as const, description: 'Maximum results (default 20)' } },
+      required: ['account', 'query'],
+    },
+  },
+  // === Slides ===
+  {
+    name: 'gw_slides_get',
+    description: 'Get presentation metadata — slide count, titles, and content summary.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, presentation_id: { type: 'string' as const, description: 'Google Slides presentation ID' } },
+      required: ['account', 'presentation_id'],
+    },
+  },
+  {
+    name: 'gw_slides_create',
+    description: 'Create a new Google Slides presentation. Returns presentation ID and link.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, title: { type: 'string' as const, description: 'Presentation title' } },
+      required: ['account', 'title'],
+    },
+  },
+  {
+    name: 'gw_slides_add_slide',
+    description: 'Add a new slide to a presentation. Optionally specify layout.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, presentation_id: { type: 'string' as const, description: 'Google Slides presentation ID' }, layout: { type: 'string' as const, description: 'Layout: "BLANK", "TITLE", "TITLE_AND_BODY", "TITLE_ONLY", "SECTION_HEADER" (default: "BLANK")' }, insertion_index: { type: 'number' as const, description: 'Position to insert (0-indexed). Defaults to end.' } },
+      required: ['account', 'presentation_id'],
+    },
+  },
+  {
+    name: 'gw_slides_search',
+    description: 'Search for Google Slides presentations by name.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: { ...ACCOUNT_PARAM, query: { type: 'string' as const, description: 'Search query (presentation name)' }, max_results: { type: 'number' as const, description: 'Maximum results (default 20)' } },
+      required: ['account', 'query'],
+    },
+  },
+]
+
 // --- Slack tool definitions ---
 
 const WORKSPACE_PARAM = {
@@ -332,7 +623,7 @@ const slackTools = [
   },
 ]
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...tools, ...slackTools] }))
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...tools, ...workspaceTools, ...slackTools] }))
 
 // --- Tool handler helpers ---
 
@@ -352,9 +643,9 @@ function unknownAccount(config: MultiGmailConfig, name: string) {
   return text(`Unknown account "${name}". Available accounts: ${accountNames(config)}`)
 }
 
-async function withAccount(
+async function withGoogleAuth(
   args: Record<string, unknown>,
-  fn: (gmail: GmailClient, account: Account, config: MultiGmailConfig) => Promise<unknown>
+  fn: (auth: OAuth2Client, account: Account, config: MultiGmailConfig) => Promise<unknown>
 ) {
   const config = readConfig()
   if (config.accounts.length === 0) return noAccounts()
@@ -363,24 +654,20 @@ async function withAccount(
   if (!account) return unknownAccount(config, args.account as string)
 
   try {
-    const client = await getAuthenticatedClient(config, account)
-    const gmail = new GmailClient(client)
-    const result = await fn(gmail, account, config)
+    const auth = await getAuthenticatedClient(config, account)
+    const result = await fn(auth, account, config)
     return json(result)
   } catch (err: any) {
-    // If we get a 401, try one more refresh before giving up
     if (err.code === 401 && !err.message?.includes('invalid_grant')) {
       try {
         const freshConfig = readConfig()
         const freshAccount = findAccount(freshConfig, args.account as string)
         if (freshAccount) {
-          const retryClient = await getAuthenticatedClient(freshConfig, freshAccount)
-          const gmail = new GmailClient(retryClient)
-          const result = await fn(gmail, freshAccount, freshConfig)
+          const retryAuth = await getAuthenticatedClient(freshConfig, freshAccount)
+          const result = await fn(retryAuth, freshAccount, freshConfig)
           return json(result)
         }
       } catch (retryErr: any) {
-        // Retry also failed — fall through to error handling below
         if (retryErr.message?.includes('invalid_grant')) {
           return text(`Refresh token expired for ${account.name} (${account.email}). Re-authenticate in the management panel at localhost:5000.`)
         }
@@ -393,7 +680,7 @@ async function withAccount(
       return text(`Authentication failed for ${account.name} (${account.email}). Re-authenticate in the management panel at localhost:5000.`)
     }
     if (err.code === 429) {
-      return text(`Rate limited by Gmail API for ${account.name}. Wait a moment and try again.`)
+      return text(`Rate limited by Google API for ${account.name}. Wait a moment and try again.`)
     }
     return text(`Error for ${account.name}: ${err.message}`)
   }
@@ -448,63 +735,47 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
 
     case 'multi_gmail_get_profile':
-      return withAccount(args, async (gmail) => gmail.getProfile())
+      return withGoogleAuth(args, async (auth) => new GmailClient(auth).getProfile())
 
     case 'multi_gmail_search':
-      return withAccount(args, async (gmail) =>
-        gmail.search(args.query as string, (args.max_results as number) || 10)
-      )
+      return withGoogleAuth(args, async (auth) =>
+        new GmailClient(auth).search(args.query as string, (args.max_results as number) || 10))
 
     case 'multi_gmail_read_message':
-      return withAccount(args, async (gmail) =>
-        gmail.readMessage(args.message_id as string)
-      )
+      return withGoogleAuth(args, async (auth) =>
+        new GmailClient(auth).readMessage(args.message_id as string))
 
     case 'multi_gmail_read_thread':
-      return withAccount(args, async (gmail) =>
-        gmail.readThread(args.thread_id as string)
-      )
+      return withGoogleAuth(args, async (auth) =>
+        new GmailClient(auth).readThread(args.thread_id as string))
 
     case 'multi_gmail_create_draft':
-      return withAccount(args, async (gmail) =>
-        gmail.createDraft({
-          to: args.to as string,
-          subject: args.subject as string,
-          body: args.body as string,
-          cc: args.cc as string | undefined,
-          bcc: args.bcc as string | undefined,
+      return withGoogleAuth(args, async (auth) =>
+        new GmailClient(auth).createDraft({
+          to: args.to as string, subject: args.subject as string, body: args.body as string,
+          cc: args.cc as string | undefined, bcc: args.bcc as string | undefined,
           inReplyTo: args.in_reply_to as string | undefined,
-        })
-      )
+        }))
 
     case 'multi_gmail_send':
-      return withAccount(args, async (gmail) =>
-        gmail.send({
-          to: args.to as string,
-          subject: args.subject as string,
-          body: args.body as string,
-          cc: args.cc as string | undefined,
-          bcc: args.bcc as string | undefined,
+      return withGoogleAuth(args, async (auth) =>
+        new GmailClient(auth).send({
+          to: args.to as string, subject: args.subject as string, body: args.body as string,
+          cc: args.cc as string | undefined, bcc: args.bcc as string | undefined,
           inReplyTo: args.in_reply_to as string | undefined,
-        })
-      )
+        }))
 
     case 'multi_gmail_list_drafts':
-      return withAccount(args, async (gmail) =>
-        gmail.listDrafts((args.max_results as number) || 10)
-      )
+      return withGoogleAuth(args, async (auth) =>
+        new GmailClient(auth).listDrafts((args.max_results as number) || 10))
 
     case 'multi_gmail_list_labels':
-      return withAccount(args, async (gmail) => gmail.listLabels())
+      return withGoogleAuth(args, async (auth) => new GmailClient(auth).listLabels())
 
     case 'multi_gmail_modify_labels':
-      return withAccount(args, async (gmail) =>
-        gmail.modifyLabels(
-          args.message_id as string,
-          args.add_labels as string[] | undefined,
-          args.remove_labels as string[] | undefined
-        )
-      )
+      return withGoogleAuth(args, async (auth) =>
+        new GmailClient(auth).modifyLabels(
+          args.message_id as string, args.add_labels as string[] | undefined, args.remove_labels as string[] | undefined))
 
     case 'multi_gmail_search_all': {
       const config = readConfig()
@@ -544,6 +815,146 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
       return json(counts)
     }
+
+    // --- Calendar tools ---
+    case 'gw_calendar_list_calendars':
+      return withGoogleAuth(args, async (auth) => new CalendarClient(auth).listCalendars())
+
+    case 'gw_calendar_list_events':
+      return withGoogleAuth(args, async (auth) =>
+        new CalendarClient(auth).listEvents(
+          args.calendar_id as string | undefined, args.time_min as string | undefined,
+          args.time_max as string | undefined, (args.max_results as number) || 20))
+
+    case 'gw_calendar_get_event':
+      return withGoogleAuth(args, async (auth) =>
+        new CalendarClient(auth).getEvent(args.event_id as string, args.calendar_id as string | undefined))
+
+    case 'gw_calendar_create_event':
+      return withGoogleAuth(args, async (auth) =>
+        new CalendarClient(auth).createEvent({
+          calendarId: args.calendar_id as string | undefined,
+          summary: args.summary as string, start: args.start as string, end: args.end as string,
+          description: args.description as string | undefined, location: args.location as string | undefined,
+          attendees: args.attendees as string[] | undefined,
+        }))
+
+    case 'gw_calendar_update_event':
+      return withGoogleAuth(args, async (auth) =>
+        new CalendarClient(auth).updateEvent({
+          calendarId: args.calendar_id as string | undefined, eventId: args.event_id as string,
+          summary: args.summary as string | undefined, start: args.start as string | undefined,
+          end: args.end as string | undefined, description: args.description as string | undefined,
+          location: args.location as string | undefined, attendees: args.attendees as string[] | undefined,
+        }))
+
+    case 'gw_calendar_delete_event':
+      return withGoogleAuth(args, async (auth) =>
+        new CalendarClient(auth).deleteEvent(args.event_id as string, args.calendar_id as string | undefined))
+
+    case 'gw_calendar_list_events_all': {
+      const config = readConfig()
+      if (config.accounts.length === 0) return noAccounts()
+      const results: Record<string, unknown> = {}
+      for (const account of config.accounts) {
+        try {
+          const auth = await getAuthenticatedClient(config, account)
+          results[`${account.name} (${account.email})`] = await new CalendarClient(auth).listEvents(
+            undefined, args.time_min as string | undefined, args.time_max as string | undefined, (args.max_results as number) || 10)
+        } catch (err: any) {
+          results[`${account.name} (${account.email})`] = { error: err.message }
+        }
+      }
+      return json(results)
+    }
+
+    // --- Drive tools ---
+    case 'gw_drive_list':
+      return withGoogleAuth(args, async (auth) =>
+        new DriveClient(auth).listFiles(args.folder_id as string | undefined, (args.max_results as number) || 20))
+
+    case 'gw_drive_search':
+      return withGoogleAuth(args, async (auth) =>
+        new DriveClient(auth).search(args.query as string, args.mime_type as string | undefined, (args.max_results as number) || 20))
+
+    case 'gw_drive_get':
+      return withGoogleAuth(args, async (auth) => new DriveClient(auth).getFile(args.file_id as string))
+
+    case 'gw_drive_create_folder':
+      return withGoogleAuth(args, async (auth) =>
+        new DriveClient(auth).createFolder(args.name as string, args.parent_id as string | undefined))
+
+    case 'gw_drive_share':
+      return withGoogleAuth(args, async (auth) =>
+        new DriveClient(auth).share(args.file_id as string, args.email as string | undefined, (args.role as string) || 'reader'))
+
+    case 'gw_drive_download':
+      return withGoogleAuth(args, async (auth) => new DriveClient(auth).download(args.file_id as string))
+
+    case 'gw_drive_search_all': {
+      const config = readConfig()
+      if (config.accounts.length === 0) return noAccounts()
+      const maxPer = (args.max_results as number) || 5
+      const results: Record<string, unknown> = {}
+      for (const account of config.accounts) {
+        try {
+          const auth = await getAuthenticatedClient(config, account)
+          results[`${account.name} (${account.email})`] = await new DriveClient(auth).search(args.query as string, undefined, maxPer)
+        } catch (err: any) {
+          results[`${account.name} (${account.email})`] = { error: err.message }
+        }
+      }
+      return json(results)
+    }
+
+    // --- Docs tools ---
+    case 'gw_docs_get':
+      return withGoogleAuth(args, async (auth) => new DocsClient(auth).getDocument(args.document_id as string))
+
+    case 'gw_docs_create':
+      return withGoogleAuth(args, async (auth) => new DocsClient(auth).createDocument(args.title as string))
+
+    case 'gw_docs_append':
+      return withGoogleAuth(args, async (auth) =>
+        new DocsClient(auth).appendText(args.document_id as string, args.text as string))
+
+    case 'gw_docs_search':
+      return withGoogleAuth(args, async (auth) =>
+        new DocsClient(auth).search(args.query as string, (args.max_results as number) || 20))
+
+    // --- Sheets tools ---
+    case 'gw_sheets_get':
+      return withGoogleAuth(args, async (auth) => new SheetsClient(auth).getSpreadsheet(args.spreadsheet_id as string))
+
+    case 'gw_sheets_read':
+      return withGoogleAuth(args, async (auth) =>
+        new SheetsClient(auth).readRange(args.spreadsheet_id as string, args.range as string))
+
+    case 'gw_sheets_write':
+      return withGoogleAuth(args, async (auth) =>
+        new SheetsClient(auth).writeRange(args.spreadsheet_id as string, args.range as string, args.values as string[][]))
+
+    case 'gw_sheets_create':
+      return withGoogleAuth(args, async (auth) => new SheetsClient(auth).createSpreadsheet(args.title as string))
+
+    case 'gw_sheets_search':
+      return withGoogleAuth(args, async (auth) =>
+        new SheetsClient(auth).search(args.query as string, (args.max_results as number) || 20))
+
+    // --- Slides tools ---
+    case 'gw_slides_get':
+      return withGoogleAuth(args, async (auth) => new SlidesClient(auth).getPresentation(args.presentation_id as string))
+
+    case 'gw_slides_create':
+      return withGoogleAuth(args, async (auth) => new SlidesClient(auth).createPresentation(args.title as string))
+
+    case 'gw_slides_add_slide':
+      return withGoogleAuth(args, async (auth) =>
+        new SlidesClient(auth).addSlide(args.presentation_id as string, args.layout as string | undefined, args.insertion_index as number | undefined))
+
+    case 'gw_slides_search':
+      return withGoogleAuth(args, async (auth) =>
+        new SlidesClient(auth).search(args.query as string, (args.max_results as number) || 20))
 
     // --- Slack tools ---
 
