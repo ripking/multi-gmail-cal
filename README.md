@@ -1,13 +1,19 @@
-# Multi-Gmail Plugin for Claude Code
+# Multi-Gmail & Workspace Plugin for Claude Code
 
-Manage multiple Gmail accounts from Claude using custom names like "Work" and "Personal". Search, read, draft, send, and label emails across all your connected inboxes.
+Manage multiple Google Workspace accounts (Gmail, Calendar, Drive, Docs, Sheets, Slides) and Slack workspaces from Claude using custom names like "Work" and "Personal".
 
 ## Setup
 
 ### 1. Google Cloud Project
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create a new project (or use an existing one)
-2. Enable the **Gmail API**: APIs & Services → Library → search "Gmail API" → Enable
+2. Enable the following APIs under APIs & Services → Library:
+   - **Gmail API**
+   - **Google Calendar API**
+   - **Google Drive API**
+   - **Google Docs API**
+   - **Google Sheets API**
+   - **Google Slides API**
 3. Configure **OAuth consent screen**: APIs & Services → OAuth consent screen
    - Choose "External" (fine for personal use)
    - Add your email as a test user
@@ -40,19 +46,17 @@ Open http://localhost:5000 in your browser:
 
 ### 4. Use It
 
-In Claude:
-- `/multi-gmail:gmail list` — see connected accounts
-- `/multi-gmail:gmail check` — unread counts
-- `/multi-gmail:email search <query>` — search emails
-- `/multi-gmail:email read <message>` — read an email
-- `/multi-gmail:email draft <recipient>` — create a draft
-- `/multi-gmail:email send <recipient>` — send an email
-
-Or just ask naturally: "Check my Work email for anything from Alice this week"
+In Claude, just ask naturally:
+- "Check my Work email for anything from Alice this week"
+- "What's on my calendar today?"
+- "Search for the budget spreadsheet in Drive"
+- "Create a new Google Doc called Meeting Notes"
+- "Post in #general on Slack"
 
 ## Architecture
 
-- **MCP Server** (`server/server.ts`) — stdio transport, launched by Claude. Exposes 12 Gmail tools.
+- **MCP Server** (`server/server.ts`) — stdio transport, launched by Claude Code. Exposes all tools.
+- **HTTP Server** (`server/http-server.ts`) — Streamable HTTP transport at `localhost:5001/mcp` for Claude Desktop.
 - **Management Panel** (`panel/panel.ts`) — localhost:5000 web dashboard for OAuth and account management.
 - **Shared config** at `~/.claude/channels/multi-gmail/config.json` — tokens and account metadata.
 
@@ -61,10 +65,13 @@ Or just ask naturally: "Check my Work email for anything from Alice this week"
 ```bash
 bun install               # Install dependencies
 bun run start             # Run MCP server (stdio — usually launched by Claude)
+bun run serve             # Run HTTP server for Claude Desktop (localhost:5001)
 bun run panel             # Run management panel on localhost:5000
 ```
 
 ## MCP Tools
+
+### Gmail
 
 | Tool | Description |
 |------|-------------|
@@ -80,3 +87,70 @@ bun run panel             # Run management panel on localhost:5000
 | `multi_gmail_modify_labels` | Add/remove labels |
 | `multi_gmail_search_all` | Search across all accounts |
 | `multi_gmail_unread_counts` | Unread count per account |
+
+### Calendar
+
+| Tool | Description |
+|------|-------------|
+| `gw_calendar_list_calendars` | List all calendars (primary, shared, subscribed) |
+| `gw_calendar_list_events` | List upcoming events |
+| `gw_calendar_get_event` | Get event details |
+| `gw_calendar_create_event` | Create a new event |
+| `gw_calendar_update_event` | Update an existing event |
+| `gw_calendar_delete_event` | Delete an event |
+| `gw_calendar_list_events_all` | List events across all accounts |
+
+### Drive
+
+| Tool | Description |
+|------|-------------|
+| `gw_drive_list` | List files in a folder |
+| `gw_drive_search` | Search files by name |
+| `gw_drive_get` | Get file metadata |
+| `gw_drive_create_folder` | Create a folder |
+| `gw_drive_share` | Share a file or folder |
+| `gw_drive_download` | Download/export file content |
+| `gw_drive_search_all` | Search files across all accounts |
+
+### Docs
+
+| Tool | Description |
+|------|-------------|
+| `gw_docs_get` | Get document content as plain text |
+| `gw_docs_create` | Create a new document |
+| `gw_docs_append` | Append text to a document |
+| `gw_docs_search` | Search documents by name |
+
+### Sheets
+
+| Tool | Description |
+|------|-------------|
+| `gw_sheets_get` | Get spreadsheet metadata |
+| `gw_sheets_read` | Read cell data from a range |
+| `gw_sheets_write` | Write data to a range |
+| `gw_sheets_create` | Create a new spreadsheet |
+| `gw_sheets_search` | Search spreadsheets by name |
+
+### Slides
+
+| Tool | Description |
+|------|-------------|
+| `gw_slides_get` | Get presentation metadata and content |
+| `gw_slides_create` | Create a new presentation |
+| `gw_slides_add_slide` | Add a slide to a presentation |
+| `gw_slides_search` | Search presentations by name |
+
+### Slack
+
+| Tool | Description |
+|------|-------------|
+| `multi_slack_list_workspaces` | List connected workspaces |
+| `multi_slack_list_channels` | List channels |
+| `multi_slack_read_channel_history` | Read recent messages |
+| `multi_slack_post_message` | Post a message |
+| `multi_slack_reply_to_thread` | Reply to a thread |
+| `multi_slack_search_messages` | Search messages |
+| `multi_slack_list_users` | List users |
+| `multi_slack_get_user_info` | Get user details |
+| `multi_slack_add_reaction` | Add an emoji reaction |
+| `multi_slack_search_all` | Search across all workspaces |

@@ -33,7 +33,7 @@ Arguments passed: `$ARGUMENTS`
 Tell the user they need a Google Cloud project with OAuth credentials. Walk them through:
 
 1. Go to https://console.cloud.google.com/ → create a new project (or use existing)
-2. Enable the **Gmail API** under APIs & Services → Library
+2. Enable the following APIs under APIs & Services → Library: **Gmail API**, **Google Calendar API**, **Google Drive API**, **Google Docs API**, **Google Sheets API**, **Google Slides API**
 3. Configure the **OAuth consent screen** (External is fine for personal use, add yourself as a test user)
 4. Create **OAuth 2.0 Client ID** (type: **Desktop app**)
 5. Copy the Client ID and Client Secret

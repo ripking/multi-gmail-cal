@@ -1,9 +1,9 @@
 {
   "name": "multi-gmail",
-  "description": "Manage multiple Gmail accounts with custom names — search, draft, send, and read across all your connected inboxes",
+  "description": "Manage multiple Google Workspace accounts (Gmail, Calendar, Drive, Docs, Sheets, Slides) and Slack workspaces with custom names",
   "version": "0.1.0",
   "author": {
     "name": "Ethan Lieberman"
   },
-  "keywords": ["gmail", "email", "multi-account"]
+  "keywords": ["gmail", "email", "multi-account", "google-workspace", "calendar", "drive", "docs", "sheets", "slides", "slack"]
 }

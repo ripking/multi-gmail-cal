@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multi-Gmail &amp; Slack Manager</title>
+  <title>Google Workspace &amp; Slack Manager</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Multi-Gmail &amp; Slack Manager</h1>
-      <p class="subtitle">Manage your connected Gmail accounts and Slack workspaces for Claude</p>
+      <h1>Google Workspace &amp; Slack Manager</h1>
+      <p class="subtitle">Manage your connected Google Workspace accounts and Slack workspaces for Claude</p>
     </header>
 
     <!-- OAuth Configuration -->
@@ -43,13 +43,13 @@
     <!-- Gmail Setup Instructions -->
     <section class="card collapsible">
       <h2 class="collapsible-header" onclick="toggleSection(this)">
-        Gmail Setup Instructions
+        Google Workspace Setup Instructions
         <span class="chevron">&#9660;</span>
       </h2>
       <div class="collapsible-content" style="display: none;">
         <ol>
           <li>Go to <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a> and create a project (or use existing)</li>
-          <li>Enable the <strong>Gmail API</strong> under APIs &amp; Services &rarr; Library</li>
+          <li>Enable the following APIs under APIs &amp; Services &rarr; Library: <strong>Gmail API</strong>, <strong>Google Calendar API</strong>, <strong>Google Drive API</strong>, <strong>Google Docs API</strong>, <strong>Google Sheets API</strong>, <strong>Google Slides API</strong></li>
           <li>Configure the <strong>OAuth consent screen</strong> (External is fine for personal use, add yourself as a test user)</li>
           <li>Create an <strong>OAuth 2.0 Client ID</strong> (type: Desktop app)</li>
           <li>Copy the Client ID and Client Secret into the form above</li>
