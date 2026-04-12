@@ -23,6 +23,10 @@ const SCOPES = [
 
 export { SCOPES }
 
+function log(msg: string) {
+  process.stderr.write(`multi-gmail: ${msg}\n`)
+}
+
 export function createOAuth2Client(config: MultiGmailConfig): OAuth2Client {
   if (!config.oauth) {
     throw new Error('OAuth not configured. Set client_id and client_secret in the management panel.')
@@ -45,11 +49,6 @@ export async function getAuthenticatedClient(
     expiry_date: account.tokens.expiry_date,
   })
 
-  // Listen for token refresh events and persist new tokens
-  client.on('tokens', (tokens) => {
-    persistRefreshedTokens(account.email, tokens)
-  })
-
   // Force refresh if expired or expiring within 5 minutes
   const BUFFER_MS = 5 * 60 * 1000
   if (account.tokens.expiry_date <= Date.now() + BUFFER_MS) {
@@ -60,34 +59,38 @@ export async function getAuthenticatedClient(
 }
 
 /**
- * Force-refresh the access token and explicitly persist the new credentials.
- * This is more reliable than relying solely on the 'tokens' event listener.
+ * Force-refresh the access token and persist the new credentials.
  */
 async function forceRefresh(client: OAuth2Client, email: string): Promise<void> {
-  const { token } = await client.getAccessToken()
-  // Explicitly persist — don't rely only on the event listener
-  const creds = client.credentials
-  if (creds.access_token) {
-    persistRefreshedTokens(email, {
-      access_token: creds.access_token,
-      expiry_date: creds.expiry_date ?? undefined,
-      refresh_token: creds.refresh_token ?? undefined,
-    })
+  try {
+    await client.getAccessToken()
+  } catch (err: any) {
+    log(`token refresh FAILED for ${email}: ${err.message}`)
+    throw err
   }
-}
 
-function persistRefreshedTokens(
-  email: string,
-  tokens: { access_token?: string | null; expiry_date?: number | null; refresh_token?: string | null }
-): void {
+  const creds = client.credentials
+  if (!creds.access_token) {
+    log(`token refresh for ${email}: no access_token returned`)
+    return
+  }
+
+  // Persist refreshed tokens to disk
   const freshConfig = readConfig()
   const acc = freshConfig.accounts.find(a => a.email === email)
-  if (acc) {
-    if (tokens.access_token) acc.tokens.access_token = tokens.access_token
-    if (tokens.expiry_date) acc.tokens.expiry_date = tokens.expiry_date
-    if (tokens.refresh_token) acc.tokens.refresh_token = tokens.refresh_token
-    writeConfig(freshConfig)
+  if (!acc) return
+
+  acc.tokens.access_token = creds.access_token
+  acc.tokens.expiry_date = creds.expiry_date ?? Date.now() + 3600 * 1000
+
+  // Only update refresh_token if Google rotated it (rare but possible)
+  if (creds.refresh_token) {
+    log(`token refresh for ${email}: Google rotated refresh token — saving new one`)
+    acc.tokens.refresh_token = creds.refresh_token
   }
+
+  writeConfig(freshConfig)
+  log(`token refresh OK for ${email}, expires ${new Date(acc.tokens.expiry_date).toISOString()}`)
 }
 
 export function isTokenExpired(account: Account): boolean {
