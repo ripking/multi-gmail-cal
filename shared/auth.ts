@@ -43,54 +43,88 @@ export async function getAuthenticatedClient(
   account: Account
 ): Promise<OAuth2Client> {
   const client = createOAuth2Client(config)
-  client.setCredentials({
-    access_token: account.tokens.access_token,
-    refresh_token: account.tokens.refresh_token,
-    expiry_date: account.tokens.expiry_date,
-  })
 
   // Force refresh if expired or expiring within 5 minutes
   const BUFFER_MS = 5 * 60 * 1000
   if (account.tokens.expiry_date <= Date.now() + BUFFER_MS) {
-    await forceRefresh(client, account.email)
+    const refreshed = await refreshTokenDirect(config, account)
+    client.setCredentials({
+      access_token: refreshed.access_token,
+      refresh_token: refreshed.refresh_token,
+      expiry_date: refreshed.expiry_date,
+    })
+  } else {
+    client.setCredentials({
+      access_token: account.tokens.access_token,
+      refresh_token: account.tokens.refresh_token,
+      expiry_date: account.tokens.expiry_date,
+    })
   }
 
   return client
 }
 
 /**
- * Force-refresh the access token and persist the new credentials.
+ * Refresh the access token by calling Google's token endpoint directly.
+ * Bypasses google-auth-library's refresh which sends extra parameters
+ * (like redirect_uri) that can cause unauthorized_client errors.
  */
-async function forceRefresh(client: OAuth2Client, email: string): Promise<void> {
+async function refreshTokenDirect(
+  config: MultiGmailConfig,
+  account: Account
+): Promise<{ access_token: string; refresh_token: string; expiry_date: number }> {
+  const { oauth } = config
+  if (!oauth) throw new Error('OAuth not configured')
+
+  const body = new URLSearchParams({
+    client_id: oauth.client_id,
+    client_secret: oauth.client_secret,
+    refresh_token: account.tokens.refresh_token,
+    grant_type: 'refresh_token',
+  })
+
+  let res: Response
   try {
-    await client.getAccessToken()
+    res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    })
   } catch (err: any) {
-    log(`token refresh FAILED for ${email}: ${err.message}`)
+    log(`token refresh FAILED for ${account.email}: network error: ${err.message}`)
     throw err
   }
 
-  const creds = client.credentials
-  if (!creds.access_token) {
-    log(`token refresh for ${email}: no access_token returned`)
-    return
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'unknown', error_description: res.statusText }))
+    const msg = `${error.error}${error.error_description ? ': ' + error.error_description : ''}`
+    log(`token refresh FAILED for ${account.email}: ${msg}`)
+    throw new Error(msg)
+  }
+
+  const tokens = await res.json()
+  const access_token = tokens.access_token as string
+  const expiry_date = tokens.expires_in
+    ? Date.now() + tokens.expires_in * 1000
+    : Date.now() + 3600 * 1000
+  const refresh_token = (tokens.refresh_token as string) || account.tokens.refresh_token
+
+  if (tokens.refresh_token) {
+    log(`token refresh for ${account.email}: Google rotated refresh token — saving new one`)
   }
 
   // Persist refreshed tokens to disk
   const freshConfig = readConfig()
-  const acc = freshConfig.accounts.find(a => a.email === email)
-  if (!acc) return
-
-  acc.tokens.access_token = creds.access_token
-  acc.tokens.expiry_date = creds.expiry_date ?? Date.now() + 3600 * 1000
-
-  // Only update refresh_token if Google rotated it (rare but possible)
-  if (creds.refresh_token) {
-    log(`token refresh for ${email}: Google rotated refresh token — saving new one`)
-    acc.tokens.refresh_token = creds.refresh_token
+  const acc = freshConfig.accounts.find(a => a.email === account.email)
+  if (acc) {
+    acc.tokens.access_token = access_token
+    acc.tokens.expiry_date = expiry_date
+    acc.tokens.refresh_token = refresh_token
+    writeConfig(freshConfig)
   }
 
-  writeConfig(freshConfig)
-  log(`token refresh OK for ${email}, expires ${new Date(acc.tokens.expiry_date).toISOString()}`)
+  log(`token refresh OK for ${account.email}, expires ${new Date(expiry_date).toISOString()}`)
+  return { access_token, refresh_token, expiry_date }
 }
 
 export function isTokenExpired(account: Account): boolean {
