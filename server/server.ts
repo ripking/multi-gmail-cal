@@ -13,7 +13,7 @@ import {
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { readConfig, findAccount, listAccountSummaries, accountNames, findSlackWorkspace, listSlackWorkspaceSummaries, slackWorkspaceNames } from '../shared/store.ts'
-import { getAuthenticatedClient } from '../shared/auth.ts'
+import { getAuthenticatedClient, checkAllAccountHealth, startTokenKeepalive } from '../shared/auth.ts'
 import { GmailClient } from './gmail-client.ts'
 import { CalendarClient } from './calendar-client.ts'
 import { DriveClient } from './drive-client.ts'
@@ -200,6 +200,11 @@ const tools = [
   {
     name: 'multi_gmail_unread_counts',
     description: 'Get unread inbox count for each connected account.',
+    inputSchema: { type: 'object' as const, properties: {} },
+  },
+  {
+    name: 'multi_gmail_check_auth_health',
+    description: 'Check authentication health for all Google accounts. Shows token status, expiry, last refresh time, and any errors. Use this to diagnose connection issues.',
     inputSchema: { type: 'object' as const, properties: {} },
   },
 ]
@@ -1025,6 +1030,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       return json(results)
     }
 
+    case 'multi_gmail_check_auth_health': {
+      const config = readConfig()
+      if (config.accounts.length === 0) return noAccounts()
+      const health = await checkAllAccountHealth()
+      return json(health)
+    }
+
     default:
       return text(`Unknown tool: ${name}`)
   }
@@ -1036,6 +1048,9 @@ async function main() {
   const transport = new StdioServerTransport()
   await server.connect(transport)
   process.stderr.write('multi-gmail: MCP server started\n')
+
+  // Start proactive token keepalive to prevent token expiration
+  startTokenKeepalive()
 }
 
 main().catch(err => {

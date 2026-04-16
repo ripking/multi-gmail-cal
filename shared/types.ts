@@ -14,6 +14,14 @@ export interface Account {
   name: string
   email: string
   tokens: AccountTokens
+  /** Set when refresh token is revoked (invalid_grant). User must re-authenticate. */
+  needs_reauth?: boolean
+  /** ISO timestamp of when the account was marked as needing re-auth */
+  needs_reauth_since?: string
+  /** ISO timestamp of the last successful token refresh */
+  last_refresh?: string
+  /** Number of consecutive refresh failures */
+  refresh_failures?: number
 }
 
 export interface MultiGmailConfig {
@@ -29,6 +37,10 @@ export interface AccountSummary {
   tokenValid: boolean
   accessTokenExpired: boolean
   hasRefreshToken: boolean
+  needsReauth?: boolean
+  needsReauthSince?: string
+  lastRefresh?: string
+  refreshFailures?: number
 }
 
 // --- Slack ---

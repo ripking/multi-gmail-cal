@@ -40,6 +40,22 @@
       </div>
     </section>
 
+    <!-- Auth Diagnostics -->
+    <section id="auth-diagnostics-section" class="card collapsible">
+      <h2 class="collapsible-header" onclick="toggleSection(this)">
+        Auth Diagnostics
+        <span class="chevron">&#9660;</span>
+      </h2>
+      <div class="collapsible-content" style="display: none;">
+        <p class="help-text">Use this to diagnose token issues. Shows detailed health status for each account and recent auth events.</p>
+        <button class="btn btn-primary" onclick="runAuthHealthCheck()" style="margin-bottom: 1rem;">Run Health Check</button>
+        <div id="auth-health-results"></div>
+        <h3 style="margin-top: 1.5rem;">Recent Auth Events</h3>
+        <button class="btn btn-secondary btn-small" onclick="loadAuthLog()" style="margin-bottom: 0.5rem;">Load Auth Log</button>
+        <pre id="auth-log-output" style="max-height: 300px; overflow-y: auto; background: #0a0a0a; padding: 0.75rem; border-radius: 6px; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all;"></pre>
+      </div>
+    </section>
+
     <!-- Gmail Setup Instructions -->
     <section class="card collapsible">
       <h2 class="collapsible-header" onclick="toggleSection(this)">

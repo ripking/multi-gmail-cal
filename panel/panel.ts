@@ -7,7 +7,8 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { readConfig, writeConfig, findAccount, findSlackWorkspace } from '../shared/store.ts'
-import { getAuthenticatedClient } from '../shared/auth.ts'
+import { getAuthenticatedClient, checkAllAccountHealth } from '../shared/auth.ts'
+import { LOG_FILE } from '../shared/auth-log.ts'
 import { GmailClient } from '../server/gmail-client.ts'
 import { generateAuthUrl, exchangeCode, getEmailFromTokens } from './oauth.ts'
 import { generateSlackAuthUrl, exchangeSlackCode } from './slack-oauth.ts'
@@ -101,10 +102,14 @@ const server = Bun.serve({
       const accounts = config.accounts.map(a => ({
         name: a.name,
         email: a.email,
-        tokenValid: !!a.tokens.refresh_token,
+        tokenValid: !!a.tokens.refresh_token && !a.needs_reauth,
         hasRefreshToken: !!a.tokens.refresh_token,
         accessTokenExpired: a.tokens.expiry_date <= Date.now(),
         expiryDate: new Date(a.tokens.expiry_date).toISOString(),
+        needsReauth: a.needs_reauth || false,
+        needsReauthSince: a.needs_reauth_since || null,
+        lastRefresh: a.last_refresh || null,
+        refreshFailures: a.refresh_failures || 0,
       }))
       return jsonResponse({ accounts })
     }
@@ -157,6 +162,25 @@ const server = Bun.serve({
       return jsonResponse({ success: true })
     }
 
+    // Re-authenticate an existing account (re-auth without removing)
+    if (path === '/api/accounts/reauth' && req.method === 'POST') {
+      const body = await parseBody(req)
+      const name = (body.name as string || '').trim()
+      if (!name) return jsonResponse({ error: 'Account name is required' }, 400)
+
+      const config = readConfig()
+      if (!config.oauth?.client_id) {
+        return jsonResponse({ error: 'OAuth not configured.' }, 400)
+      }
+      const account = findAccount(config, name)
+      if (!account) return jsonResponse({ error: `Account "${name}" not found` }, 404)
+
+      const state = encodeURIComponent(name)
+      const authUrl = generateAuthUrl(config.oauth, state)
+      pendingAuths.set(name, true)
+      return jsonResponse({ authUrl, name })
+    }
+
     if (path === '/api/accounts/test' && req.method === 'POST') {
       const body = await parseBody(req)
       const name = (body.name as string || '').trim()
@@ -171,6 +195,26 @@ const server = Bun.serve({
         return jsonResponse({ success: true, profile })
       } catch (err: any) {
         return jsonResponse({ success: false, error: err.message }, 500)
+      }
+    }
+
+    // --- API: Auth health check ---
+    if (path === '/api/auth-health' && req.method === 'GET') {
+      const config = readConfig()
+      if (config.accounts.length === 0) return jsonResponse({ accounts: [] })
+      const health = await checkAllAccountHealth()
+      return jsonResponse({ accounts: health })
+    }
+
+    // --- API: Auth log (last 100 lines) ---
+    if (path === '/api/auth-log' && req.method === 'GET') {
+      try {
+        const content = readFileSync(LOG_FILE, 'utf8')
+        const lines = content.trim().split('\n')
+        const last100 = lines.slice(-100)
+        return jsonResponse({ lines: last100 })
+      } catch {
+        return jsonResponse({ lines: ['No auth log file yet. Events will appear after the first token refresh.'] })
       }
     }
 
@@ -206,8 +250,13 @@ const server = Bun.serve({
         if (existing) {
           existing.tokens = tokens
           existing.name = accountName
+          // Clear re-auth state on successful re-authentication
+          existing.needs_reauth = false
+          delete existing.needs_reauth_since
+          existing.refresh_failures = 0
+          existing.last_refresh = new Date().toISOString()
         } else {
-          config.accounts.push({ name: accountName, email, tokens })
+          config.accounts.push({ name: accountName, email, tokens, last_refresh: new Date().toISOString() })
         }
 
         writeConfig(config)
@@ -455,8 +504,12 @@ if (tlsConfig) {
           if (existing) {
             existing.tokens = tokens
             existing.name = accountName
+            existing.needs_reauth = false
+            delete existing.needs_reauth_since
+            existing.refresh_failures = 0
+            existing.last_refresh = new Date().toISOString()
           } else {
-            config.accounts.push({ name: accountName, email, tokens })
+            config.accounts.push({ name: accountName, email, tokens, last_refresh: new Date().toISOString() })
           }
 
           writeConfig(config)

@@ -88,33 +88,61 @@ function renderAccounts(accounts) {
   }
 
   list.innerHTML = accounts.map(a => {
-    let statusClass, statusText
-    if (!a.hasRefreshToken) {
+    let statusClass, statusText, statusDetail = ''
+    if (a.needsReauth) {
       statusClass = 'status-expired'
       statusText = 'Needs Re-auth'
+      statusDetail = a.needsReauthSince
+        ? `Token revoked ${timeAgo(a.needsReauthSince)}`
+        : 'Refresh token was revoked by Google'
+    } else if (!a.hasRefreshToken) {
+      statusClass = 'status-expired'
+      statusText = 'Needs Re-auth'
+      statusDetail = 'No refresh token stored'
+    } else if (a.refreshFailures > 0) {
+      statusClass = 'status-warning'
+      statusText = 'Degraded'
+      statusDetail = `${a.refreshFailures} consecutive refresh failure(s)`
     } else if (a.accessTokenExpired) {
       statusClass = 'status-ok'
       statusText = 'Active (will auto-refresh)'
+      statusDetail = a.lastRefresh ? `Last refresh: ${timeAgo(a.lastRefresh)}` : ''
     } else {
       statusClass = 'status-ok'
       statusText = 'Active'
+      statusDetail = a.lastRefresh ? `Last refresh: ${timeAgo(a.lastRefresh)}` : ''
     }
+
+    const showReauth = a.needsReauth || !a.hasRefreshToken || a.refreshFailures > 2
     return `
     <div class="account-row">
       <div class="account-info">
         <div class="account-name">${esc(a.name)}</div>
         <div class="account-email">${esc(a.email)}</div>
+        ${statusDetail ? `<div class="account-detail">${esc(statusDetail)}</div>` : ''}
       </div>
       <span class="status-badge ${statusClass}">
         ${statusText}
       </span>
       <div class="account-actions">
+        ${showReauth ? `<button class="btn btn-warning btn-small" onclick="reauthAccount('${esc(a.name)}')">Re-auth</button>` : ''}
         <button class="btn btn-secondary btn-small" onclick="testAccount('${esc(a.name)}')">Test</button>
         <button class="btn btn-secondary btn-small" onclick="renameAccount('${esc(a.name)}')">Rename</button>
         <button class="btn btn-danger btn-small" onclick="removeAccount('${esc(a.name)}')">Remove</button>
       </div>
     </div>`
   }).join('')
+}
+
+function timeAgo(isoString) {
+  const diff = Date.now() - new Date(isoString).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
 }
 
 async function addAccount() {
@@ -227,6 +255,78 @@ async function testAccount(name) {
     }
   } catch (err) {
     toast(`${name}: Test failed — ${err.message}`, 'error')
+  }
+}
+
+async function reauthAccount(name) {
+  toast(`Starting re-authentication for ${name}...`, 'success')
+  try {
+    const res = await fetch('/api/accounts/reauth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+
+    if (data.error) {
+      toast(data.error, 'error')
+      return
+    }
+
+    window.open(data.authUrl, '_blank')
+    toast('Sign in with Google in the new tab to re-authenticate...', 'success')
+    startPolling()
+  } catch (err) {
+    toast('Failed to start re-auth: ' + err.message, 'error')
+  }
+}
+
+async function runAuthHealthCheck() {
+  const container = document.getElementById('auth-health-results')
+  container.innerHTML = '<p>Checking...</p>'
+  try {
+    const res = await fetch('/api/auth-health')
+    const data = await res.json()
+    if (!data.accounts || data.accounts.length === 0) {
+      container.innerHTML = '<p class="empty-state">No accounts to check.</p>'
+      return
+    }
+    container.innerHTML = data.accounts.map(a => {
+      const statusColors = {
+        healthy: '#22c55e',
+        expiring_soon: '#eab308',
+        expired: '#f97316',
+        needs_reauth: '#ef4444',
+        no_refresh_token: '#ef4444',
+        error: '#ef4444',
+      }
+      const color = statusColors[a.status] || '#737373'
+      return `
+        <div style="border: 1px solid #262626; border-left: 3px solid ${color}; padding: 0.75rem; margin-bottom: 0.5rem; border-radius: 6px; background: #0f0f0f;">
+          <div><strong>${esc(a.name)}</strong> (${esc(a.email)})</div>
+          <div style="color: ${color}; font-weight: 600; margin: 0.25rem 0;">${a.status.toUpperCase()}</div>
+          <div style="color: #a3a3a3; font-size: 0.85rem;">${esc(a.details)}</div>
+          <div style="color: #737373; font-size: 0.8rem; margin-top: 0.25rem;">
+            Access token expires: ${a.accessTokenExpiry}
+            ${a.lastRefresh ? ' | Last refresh: ' + a.lastRefresh : ''}
+            ${a.refreshFailures > 0 ? ' | Failures: ' + a.refreshFailures : ''}
+          </div>
+        </div>`
+    }).join('')
+  } catch (err) {
+    container.innerHTML = `<p style="color: #ef4444;">Health check failed: ${esc(err.message)}</p>`
+  }
+}
+
+async function loadAuthLog() {
+  const output = document.getElementById('auth-log-output')
+  output.textContent = 'Loading...'
+  try {
+    const res = await fetch('/api/auth-log')
+    const data = await res.json()
+    output.textContent = (data.lines || []).join('\n') || 'No log entries yet.'
+  } catch (err) {
+    output.textContent = 'Failed to load auth log: ' + err.message
   }
 }
 
