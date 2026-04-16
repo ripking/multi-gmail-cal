@@ -14,6 +14,7 @@ export interface Account {
   name: string
   email: string
   tokens: AccountTokens
+  oauth?: OAuthConfig
 }
 
 export interface MultiGmailConfig {

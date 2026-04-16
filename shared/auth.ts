@@ -27,14 +27,15 @@ function log(msg: string) {
   process.stderr.write(`multi-gmail: ${msg}\n`)
 }
 
-export function createOAuth2Client(config: MultiGmailConfig): OAuth2Client {
-  if (!config.oauth) {
+export function createOAuth2Client(config: MultiGmailConfig, account?: Account): OAuth2Client {
+  const oauth = account?.oauth || config.oauth
+  if (!oauth) {
     throw new Error('OAuth not configured. Set client_id and client_secret in the management panel.')
   }
   return new OAuth2Client(
-    config.oauth.client_id,
-    config.oauth.client_secret,
-    config.oauth.redirect_uri
+    oauth.client_id,
+    oauth.client_secret,
+    oauth.redirect_uri
   )
 }
 
@@ -42,7 +43,7 @@ export async function getAuthenticatedClient(
   config: MultiGmailConfig,
   account: Account
 ): Promise<OAuth2Client> {
-  const client = createOAuth2Client(config)
+  const client = createOAuth2Client(config, account)
 
   // Force refresh if expired or expiring within 5 minutes
   const BUFFER_MS = 5 * 60 * 1000
@@ -73,7 +74,7 @@ async function refreshTokenDirect(
   config: MultiGmailConfig,
   account: Account
 ): Promise<{ access_token: string; refresh_token: string; expiry_date: number }> {
-  const { oauth } = config
+  const oauth = account.oauth || config.oauth
   if (!oauth) throw new Error('OAuth not configured')
 
   const body = new URLSearchParams({
