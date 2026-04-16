@@ -11,6 +11,7 @@ export function readConfig(): MultiGmailConfig {
     const raw = readFileSync(CONFIG_FILE, 'utf8')
     const parsed = JSON.parse(raw)
     return {
+      ...parsed,
       oauth: parsed.oauth,
       accounts: Array.isArray(parsed.accounts) ? parsed.accounts : [],
     }

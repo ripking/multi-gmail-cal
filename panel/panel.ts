@@ -184,7 +184,10 @@ const server = Bun.serve({
         // Check if this email is already connected under another name
         const existing = config.accounts.find(a => a.email === email)
         if (existing) {
-          existing.tokens = tokens
+          existing.tokens = {
+            ...tokens,
+            refresh_token: tokens.refresh_token || existing.tokens.refresh_token,
+          }
           existing.name = accountName
         } else {
           config.accounts.push({ name: accountName, email, tokens })
