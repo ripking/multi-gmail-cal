@@ -85,6 +85,7 @@ const server = Bun.serve({
         email: a.email,
         tokenValid: a.tokens.expiry_date > Date.now(),
         expiryDate: new Date(a.tokens.expiry_date).toISOString(),
+        clientIdPrefix: (a.oauth || config.oauth)?.client_id.substring(0, 8) || 'unknown',
       }))
       return jsonResponse({ accounts })
     }
@@ -189,8 +190,9 @@ const server = Bun.serve({
             refresh_token: tokens.refresh_token || existing.tokens.refresh_token,
           }
           existing.name = accountName
+          existing.oauth = config.oauth
         } else {
-          config.accounts.push({ name: accountName, email, tokens })
+          config.accounts.push({ name: accountName, email, tokens, oauth: config.oauth })
         }
 
         writeConfig(config)

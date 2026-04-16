@@ -86,6 +86,7 @@ function renderAccounts(accounts) {
       <div class="account-info">
         <div class="account-name">${esc(a.name)}</div>
         <div class="account-email">${esc(a.email)}</div>
+        <div class="account-hint" style="font-size: 0.8rem; color: #737373;">OAuth Prefix: ${esc(a.clientIdPrefix)}...</div>
       </div>
       <span class="status-badge ${a.tokenValid ? 'status-ok' : 'status-expired'}">
         ${a.tokenValid ? 'Valid' : 'Expired'}
